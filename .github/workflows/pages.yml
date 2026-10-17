@@ -22,6 +22,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Decode voice + music audio (stored as base64 text)
+        run: |
+          for f in audio/*.mp3.b64; do base64 -d "$f" > "${f%.b64}" && rm "$f"; done
+          ls audio/*.mp3 | wc -l
       - uses: actions/configure-pages@v5
         with:
           enablement: true

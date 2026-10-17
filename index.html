@@ -63,6 +63,9 @@ button{font-family:inherit}
 .fill{height:100%;width:0;background:linear-gradient(90deg,#7ee03a,#ffe066);border-radius:17px;transition:width .4s}
 .pop{position:absolute;transform:translate(-50%,-50%);font-size:clamp(28px,8vw,46px);font-weight:900;color:#ffe066;
   -webkit-text-stroke:2px #3a1466;text-shadow:0 4px 0 #3a1466,0 0 16px #ff8a1f;white-space:nowrap;pointer-events:none;animation:popword 1.15s ease-out forwards;z-index:5}
+.echo-pop{position:absolute;left:4%;right:4%;top:26%;text-align:center;font-size:clamp(22px,6.4vw,36px);font-weight:900;color:#ffc8ea;line-height:1.15;
+  -webkit-text-stroke:1.5px #5a1046;text-shadow:0 3px 0 #5a1046,0 0 14px #ff5fb8;pointer-events:none;z-index:6;animation:echopop 1.9s ease-out forwards}
+@keyframes echopop{0%{opacity:0;transform:scale(.6)}14%{opacity:1;transform:scale(1.08)}24%{transform:scale(1)}78%{opacity:1}100%{opacity:0;transform:translateY(-16px)}}
 #stage.fading #scene,#stage.fading #text,#stage.fading #actions{opacity:0}
 #rotate{display:none;position:fixed;inset:0;z-index:50;background:#1b0933;color:#fff;flex-direction:column;align-items:center;justify-content:center;text-align:center;font-size:26px;padding:20px}
 #rotate .ico{font-size:64px}
@@ -194,8 +197,8 @@ button{font-family:inherit}
   <div id="top">
     <div id="tally" role="status" aria-live="polite" title="Hidden monsters found"><span aria-hidden="true">👀</span><b>0</b>/6</div>
     <div class="tools">
-      <button class="icon-btn" id="sndBtn" data-act="snd" aria-label="Sound effects on or off" aria-pressed="true">🎵</button>
-      <button class="icon-btn" id="voiceBtn" data-act="voice" aria-label="Read aloud on or off" aria-pressed="true">🗣️</button>
+      <button class="icon-btn" id="sndBtn" data-act="snd" aria-label="Music and sound effects on or off" aria-pressed="true">🎵</button>
+      <button class="icon-btn" id="voiceBtn" data-act="voice" aria-label="Voices on or off" aria-pressed="true">🗣️</button>
     </div>
   </div>
   <div id="scene"><svg id="svg" viewBox="0 0 400 440" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Story picture"></svg></div>
@@ -224,8 +227,9 @@ const Snd = {
       const b=this.ctx.createBuffer(1,1,22050), s=this.ctx.createBufferSource(); s.buffer=b; s.connect(this.master); s.start(0);
       if(this.ctx.state==='suspended') this.ctx.resume().catch(()=>{});
     }catch(e){ this.ctx=null; }
+    VO.setup(this.ctx);
   },
-  setOn(v){ this.on=v; if(this.master) this.master.gain.setTargetAtTime(v?.7:0,this.ctx.currentTime,.02); },
+  setOn(v){ this.on=v; if(this.master) this.master.gain.setTargetAtTime(v?.7:0,this.ctx.currentTime,.02); VO.setMusic(v); },
   osc(f,t0,dur,o={}){
     const c=this.ctx, vol=o.vol??.3, os=c.createOscillator(), g=c.createGain();
     os.type=o.type||'sine'; os.frequency.setValueAtTime(f,t0);
@@ -273,6 +277,7 @@ const Snd = {
     sting(t){ [392,370,349].forEach((f,i)=>this.osc(f,t+i*.18,.3,{type:'square',vol:.07,lp:1500})); },
     heartbeat(t){ this.osc(60,t,.12,{to:40,vol:.7}); this.osc(60,t+.18,.12,{to:40,vol:.55}); },
     note(t){ const f=[523,587,659,784,880,1047][Math.floor(Math.random()*6)]; this.osc(f,t,.25,{type:'square',vol:.08,lp:2500}); this.osc(f*1.5,t+.08,.2,{type:'triangle',vol:.08}); },
+    wahwah(t){ [311,294,277].forEach((f,i)=>this.osc(f,t+i*.32,.3,{type:'sawtooth',vol:.13,lp:900,a:.04})); this.osc(262,t+.96,.95,{type:'sawtooth',to:236,vol:.13,lp:900,a:.04,vib:6,vibAmt:9}); },
     laugh(t){ [300,260,300,250].forEach((f,i)=>this.osc(f,t+i*.14,.12,{type:'sawtooth',vol:.12,lp:1100,to:f*.8})); },
   },
   // Looping monster-party music (swap point: an <audio loop> track could replace this)
@@ -299,10 +304,10 @@ const Snd = {
 const P = n => Snd.play(n);
 
 /* =====================================================================
-   READ-ALOUD (browser speechSynthesis). Swap point: recorded narration
-   clips could be played here instead.
+   FALLBACK READ-ALOUD (browser speechSynthesis): used only for a line
+   whose recorded file failed to load, or when Web Audio is missing.
    ===================================================================== */
-const Voice = {
+const TTS = {
   on:true, v:null, ok:('speechSynthesis' in window) && typeof SpeechSynthesisUtterance!=='undefined',
   pick(){
     if(!this.ok) return; const vs=speechSynthesis.getVoices(); if(!vs.length) return;
@@ -322,13 +327,201 @@ const Voice = {
   },
   stop(){ if(this.ok) try{ speechSynthesis.cancel(); }catch(e){} }
 };
-if(Voice.ok){ Voice.pick(); try{ speechSynthesis.addEventListener('voiceschanged',()=>Voice.pick()); }catch(e){} }
+if(TTS.ok){ TTS.pick(); try{ speechSynthesis.addEventListener('voiceschanged',()=>TTS.pick()); }catch(e){} }
+
+/* =====================================================================
+   RECORDED VOICES + MUSIC BEDS (Web Audio).
+   Every line is a file audio/<id>.mp3 (manifest VO_LINES below:
+   id -> [on-screen/spoken text, L=leader (Mr Jim) | E=echo (Teddy Twinkle), gain]).
+   Lines are scheduled on the beat of a looping bed (BEDS). The bed is
+   ducked under every voice line. If a file fails to load, that line falls
+   back to the browser's speechSynthesis (TTS below), so the game never
+   goes silent. 🗣️ = voices on/off, 🎵 = music + sound effects on/off.
+   ===================================================================== */
+const VO_LINES={"title_01":["We're going on a goon hunt! A spooky tap-along story. Listen, tap, and find the hiding monsters!","L"],
+ "chant_L1":["We're going on a goon hunt.","L"],
+ "chant_E1":["We're going on a goon hunt!","E"],
+ "chant_L2":["We're going to catch a green one.","L"],
+ "chant_E2":["We're gonna catch a green one!","E"],
+ "chant_L3":["What a spooky night!","L"],
+ "chant_E3":["What a spooky night!","E"],
+ "scared_L_pumpkin":["We're not scared.","L"],
+ "scared_E_pumpkin":["Not scared either!","E"],
+ "scared_L_swamp":["We're not REALLY scared.","L"],
+ "scared_E_swamp":["Not REALLY scared!","E"],
+ "scared_L_tunnel":["We're just a LITTLE scared.","L"],
+ "scared_E_tunnel":["Just a little scared!","E"],
+ "scared_L_forest":["We're a little MORE scared.","L"],
+ "scared_E_forest":["A little MORE scared!","E"],
+ "scared_L_graveyard":["Now we're REALLY scared!","L"],
+ "scared_E_graveyard":["REALLY scared!","E"],
+ "scared_L_house":["Now we're really, REALLY scared!","L"],
+ "scared_E_house":["Really, REALLY scared!","E"],
+ "intro_pumpkin":["Uh oh! A twisted, tangled pumpkin patch!","L"],
+ "intro_swamp":["Uh oh! A murky, bubbling swamp!","L"],
+ "intro_tunnel":["Uh oh! A dingy, dusty tunnel!","L"],
+ "intro_forest":["Uh oh! A shadowy, knotted forest!","L"],
+ "intro_graveyard":["Uh oh! A foggy, crumbling graveyard!","L"],
+ "intro_house":["Uh oh! A creaky, crooked haunted house!","L"],
+ "over_L":["We can't go over it.","L"],
+ "over_E":["We can't go over it!","E"],
+ "under_L":["We can't go under it.","L"],
+ "under_E":["We can't go under it!","E"],
+ "through_01":["Oh no! We've got to go through it!","L"],
+ "hint_pumpkin":["Tap the tangled vines!","L"],
+ "hint_swamp":["Pop the bubbles!","L"],
+ "hint_tunnel":["Shoo the bats!","L"],
+ "hint_forest":["Stomp the footprints!","L"],
+ "hint_graveyard":["Blow the fog away!","L"],
+ "hint_house":["Tap the creaky door!","L"],
+ "word_pumpkin":["Stumble grab!","E"],
+ "word_swamp":["Gurgle hiss!","E"],
+ "word_tunnel":["Flutter skulk!","E"],
+ "word_forest":["Grumble stomp!","E"],
+ "word_graveyard":["Whisper groan!","E"],
+ "word_house":["Creak!","E"],
+ "done_01":["Hooray! We made it through!","L"],
+ "done_E":["Hooray!","E"],
+ "psst_hiding":["Psst... someone is hiding here!","L",0.75],
+ "door_01":["The door creaks open...","L",0.75],
+ "psst_window":["Psst... peek in the window first!","L",0.75],
+ "found_pumpkin":["You found a stumbly zombie! Stumble grab, HUG!","L"],
+ "found_swamp":["You found a splashy swamp creature! Blub blub!","L"],
+ "found_tunnel":["You found a sneaky goblin! Hee hee hee!","L"],
+ "found_forest":["You found a big, stompy Frankenstein! Grumble, boogie!","L"],
+ "found_graveyard":["You found two giggly ghosts! Ooo-hoo-hoo!","L"],
+ "found_house":["You found a peek-a-boo mummy! Peek-a-boo!","L"],
+ "goon_01":["What's that? Something is in the dark...","L",0.75],
+ "goon_02":["A bumpy, bald head!","L",0.75],
+ "goon_02E":["A bumpy, bald head!","E",0.75],
+ "goon_03":["Big, green ears!","L",0.75],
+ "goon_03E":["Big, green ears!","E",0.75],
+ "goon_04":["Little, beady eyes!","L",0.75],
+ "goon_04E":["Little, beady eyes!","E",0.75],
+ "goon_05":["It's a GOON! Boo! Everybody run!","L"],
+ "goon_05E":["Aaah! Run!","E"],
+ "goon_06":["But the littlest unicorn cheers: Hooray, a monster!","L"],
+ "run_house":["Back through the haunted house!","L"],
+ "run_graveyard":["Back through the foggy graveyard!","L"],
+ "run_forest":["Back through the shadowy forest!","L"],
+ "run_tunnel":["Back through the dusty tunnel!","L"],
+ "run_swamp":["Back through the murky swamp!","L"],
+ "run_pumpkin":["Back through the pumpkin patch!","L"],
+ "home_01":["Home! Up the stairs! Under the covers! Phew... safe and snug.","L"],
+ "home_02":["Wait... someone is missing! Count the eyes. Who is it?","L"],
+ "party_01":["There's the littlest unicorn! Monsters aren't scary. Monsters are fun! It's a monster party with the Goon!","L"],
+ "count_0":["You found zero of six hiding monsters! Tap them to make them dance!","L"],
+ "count_1":["You found one of six hiding monsters! Tap them to make them dance!","L"],
+ "count_2":["You found two of six hiding monsters! Tap them to make them dance!","L"],
+ "count_3":["You found three of six hiding monsters! Tap them to make them dance!","L"],
+ "count_4":["You found four of six hiding monsters! Tap them to make them dance!","L"],
+ "count_5":["You found five of six hiding monsters! Tap them to make them dance!","L"],
+ "count_6":["You found all six hiding monsters! Tap them to make them dance!","L"],
+ "voice_on":["Read aloud is on!","L"],
+ "pop_hee":["Hee hee!","E"],
+ "goon_wait":["Wait! Let's play!","L"],
+ "goon_laugh":["Ha ha ha!","L"],
+ "uni_whee":["Wheee!","E"]};
+const BEDS={march:{beat:.5,loop:16,vol:.42},suspense:{beat:.5,loop:8,vol:.5},escape:{beat:.3716,loop:8.9184,vol:.4}};
+const SILENT_MP3='data:audio/mpeg;base64,SUQzBAAAAAAAIlRTU0UAAAAOAAADTGF2ZjYxLjcuMTAzAAAAAAAAAAAAAAD/83DAAAAAAAAAAAAASW5mbwAAAA8AAAAMAAADKQBKSkpKSkpKSlpaWlpaWlpaa2tra2tra2t7e3t7e3t7e3uMjIyMjIyMjJycnJycnJycra2tra2tra2tvb29vb29vb3Ozs7Ozs7Ozt/f39/f39/f3+/v7+/v7+/v//////////8AAAAATGF2YzYxLjE5AAAAAAAAAAAAAAAAJAM3AAAAAAAAAyk5cS8nAAAAAAAAAAAAAAAAAP/zIMQAAAADSAAAAABMQU1FMy4xMDBVVVVVVVVVVVVVVUxBTUUzLjEwMFVVVVVVVVVVVVX/8yLEJwAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FMy4xMDBVVVVVVVVVVVVVVf/zIMRPAAADSAAAAABVVVVVVVVVVVVVVVVVVVVVVVVVTEFNRTMuMTAwVVVVVVVVVVVVVVX/8yDEdgAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FMy4xMDBVVVVVVVVVVVVV//MgxJ0AAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVTEFNRTMuMTAwVVVVVVVVVVVVVf/zIsTEAAADSAAAAABVVVVVVVVVVVVVVVVVVVVVVVVVVUxBTUUzLjEwMFVVVVVVVVVVVVVV//MgxNgAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVf/zIMTYAAADSAAAAABVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/8yDE2AAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//MixNcAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/8yDE2AAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//MgxNgAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVQ==';
+const VO={
+  base:'audio/', on:true, ctx:null, buf:{}, raw:{}, bad:{}, ready:null, live:[], tok:0,
+  grid:{t0:0,beat:.5}, bedName:null, bed:null, shoutEnd:0, DUCK:.3,
+  ids(){ return Object.keys(VO_LINES).concat(Object.keys(BEDS).map(b=>'bed_'+b)); },
+  prefetch(){ // start downloading right away; decoding waits for the first tap
+    if(!window.fetch) return;
+    this.ids().forEach(id=>{ this.raw[id]=fetch(this.base+id+'.mp3').then(r=>{ if(!r.ok) throw new Error(r.status); return r.arrayBuffer(); }).catch(()=>{ this.bad[id]=1; return null; }); });
+  },
+  setup(ctx){
+    if(this.ctx||!ctx) return; this.ctx=ctx;
+    this.vbus=ctx.createGain(); this.vbus.gain.value=this.on?1:0; this.vbus.connect(ctx.destination);
+    this.mbus=ctx.createGain(); this.mbus.gain.value=Snd.on?1:0; this.mbus.connect(ctx.destination);
+    this.duck=ctx.createGain(); this.duck.connect(this.mbus);
+    this.ready={};
+    this.ids().forEach(id=>{
+      this.ready[id]=(this.raw[id]||Promise.resolve(null))
+        .then(ab=>ab?new Promise((res,rej)=>ctx.decodeAudioData(ab,res,rej)):null)
+        .then(b=>{ if(b) this.buf[id]=b; else this.bad[id]=1; }).catch(()=>{ this.bad[id]=1; });
+    });
+    // iOS: let Web Audio play even with the ringer switch off
+    try{ if(navigator.audioSession) navigator.audioSession.type='playback'; }catch(e){}
+    try{ const a=new Audio(SILENT_MP3); a.setAttribute('playsinline',''); a.play().catch(()=>{}); }catch(e){}
+  },
+  wait(ids,ms=1500){
+    if(!this.ready) return Promise.resolve();
+    const ps=ids.filter(i=>!this.buf[i]&&!this.bad[i]&&this.ready[i]).map(i=>this.ready[i]);
+    return ps.length?Promise.race([Promise.all(ps),new Promise(r=>setTimeout(r,ms))]):Promise.resolve();
+  },
+  setVoice(v){ this.on=v; if(this.vbus) this.vbus.gain.setTargetAtTime(v?1:0,this.ctx.currentTime,.02); if(!v) this.stop(); },
+  setMusic(v){ if(this.mbus) this.mbus.gain.setTargetAtTime(v?1:0,this.ctx.currentTime,.03); },
+  now(){ return this.ctx?this.ctx.currentTime:performance.now()/1000; },
+  q(t,unit){ // next beat / bar / half-beat of the running bed at or after t
+    const g=this.grid, B=unit==='bar'?g.beat*4:unit==='half'?g.beat/2:g.beat;
+    let x=g.t0+Math.ceil((t-g.t0-.1)/B)*B; while(x<this.now()+.03) x+=B; return x;
+  },
+  dur(id,rate=1){ const b=this.buf[id]; if(b) return b.duration/rate; const t=(VO_LINES[id]||[''])[0]; return Math.max(.8,t.split(/\s+/).length*.3)/rate; },
+  src(id,t,o={}){ // play a decoded line at context time t; returns its end time
+    const c=this.ctx,b=this.buf[id]; if(!c||!b) return null;
+    const rate=o.rate||1, s=c.createBufferSource(), g=c.createGain();
+    s.buffer=b; s.playbackRate.value=rate; g.gain.value=(o.gain||1)*((VO_LINES[id]||[])[2]||1);
+    s.connect(g); g.connect(this.vbus);
+    const st=Math.max(c.currentTime,t-.015), end=st+b.duration/rate; s.start(st);
+    this.live.push(s); s.onended=()=>{ const i=this.live.indexOf(s); if(i>=0) this.live.splice(i,1); };
+    if(this.on){ const d=this.duck.gain; d.setTargetAtTime(this.DUCK,Math.max(c.currentTime,st-.05),.04); d.setTargetAtTime(1,end+.08,.18); }
+    return end;
+  },
+  say(id){ if(!this.on) return; const L=VO_LINES[id]; if(L) TTS.say(L[0],{pitch:L[1]==='E'?1.5:1.1,rate:L[1]==='E'?1:.95}); },
+  /* Play a run of lines. items: [{id, q:'bar'|'beat'|'half', delay, gap, rate, gain, on(t,dur)}].
+     on() fires when the line starts (also when voices are off), so text/pops stay in step. */
+  seq(items,{keep=false}={}){
+    if(!keep) this.stop();
+    const tok=this.tok;
+    if(!this.ctx){ if(this.on) TTS.say(items.map(i=>(VO_LINES[i.id]||[''])[0]).join(' ')); items.forEach(i=>i.on&&i.on(0,this.dur(i.id))); return; }
+    const need=items.map(i=>i.id); if(this.bedName) need.push('bed_'+this.bedName);
+    this.wait(need).then(()=>{
+      if(tok!==this.tok) return;
+      if(!this.bed) this.grid={t0:this.now()+.08,beat:this.grid.beat};
+      let t=this.now()+.06;
+      items.forEach(it=>{
+        if(it.delay) t+=it.delay;
+        if(it.q) t=this.q(t,it.q);
+        const at=t, d=this.dur(it.id,it.rate||1), ms=Math.max(0,(at-this.now())*1000);
+        if(this.on){ if(this.buf[it.id]) this.src(it.id,at,it); else later(()=>{ if(tok===this.tok) this.say(it.id); },ms); }
+        if(it.on) later(()=>{ if(tok===this.tok) it.on(at,d); },ms);
+        t=at+d+(it.gap||0);
+      });
+    });
+  },
+  shout(id,unit='half'){ // a tap-triggered word: on the next half-beat, never stacked on itself
+    if(!this.on) return; const n=this.now(); if(n<this.shoutEnd-.12) return;
+    if(!this.ctx||!this.buf[id]){ if(!this.ctx||this.bad[id]){ this.say(id); this.shoutEnd=n+this.dur(id); } return; }
+    this.shoutEnd=this.src(id,unit==='now'?n+.02:this.q(n,unit))||n;
+  },
+  stop(){
+    this.tok++; this.live.forEach(s=>{ try{ s.stop(); }catch(e){} }); this.live.length=0; this.shoutEnd=0; TTS.stop();
+    if(this.duck){ const d=this.duck.gain,n=this.ctx.currentTime; d.cancelScheduledValues(n); d.setTargetAtTime(1,n,.1); }
+  },
+  bedTo(name,fade=.5){ // switch the looping bed (null = silence)
+    if(name===this.bedName&&(this.bed||!name)) return; this.bedName=name;
+    const c=this.ctx; if(!c) return;
+    if(this.bed){ const {s,g}=this.bed, n=c.currentTime; g.gain.cancelScheduledValues(n); g.gain.setValueAtTime(g.gain.value,n); g.gain.linearRampToValueAtTime(0,n+fade); try{ s.stop(n+fade+.05); }catch(e){} this.bed=null; }
+    if(!name) return;
+    const id='bed_'+name, start=()=>{
+      if(this.bedName!==name||this.bed||!this.buf[id]) return;
+      const B=BEDS[name], s=c.createBufferSource(), g=c.createGain(), t=c.currentTime+.06;
+      s.buffer=this.buf[id]; s.loop=true; s.loopStart=0; s.loopEnd=Math.min(B.loop,s.buffer.duration);
+      g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(B.vol,t+.2);
+      s.connect(g); g.connect(this.duck); s.start(t); this.bed={s,g}; this.grid={t0:t,beat:B.beat};
+    };
+    if(this.buf[id]) start(); else if(this.ready&&this.ready[id]) this.ready[id].then(start);
+  },
+};
 
 /* =====================================================================
    STORY DATA: locations & sound words follow the book's order.
    ===================================================================== */
 const OBST=[
- {id:'pumpkin',  intro:"Uh oh! A twisted, tangled pumpkin patch!", short:"pumpkin patch",  word:"Stumble grab!", snd:'stumble', hint:"Tap the tangled vines!", scared:"We're not scared.",               btn:"We're not scared!",      n:5, gone:'poof',    mpos:[338,142]},
+ {id:'pumpkin',  intro:"Uh oh! A twisted, tangled pumpkin patch!", short:"pumpkin patch",  word:"Stumble grab!", snd:'stumble', hint:"Tap the tangled vines!", scared:"We're not scared.",               btn:"Not scared either!",     n:5, gone:'poof',    mpos:[338,142]},
  {id:'swamp',    intro:"Uh oh! A murky, bubbling swamp!",          short:"murky swamp",    word:"Gurgle hiss!",  snd:'gurgle',  hint:"Pop the bubbles!",       scared:"We're not REALLY scared.",        btn:"Not REALLY scared!",     n:5, gone:'poof',    mpos:[352,140]},
  {id:'tunnel',   intro:"Uh oh! A dingy, dusty tunnel!",            short:"dusty tunnel",   word:"Flutter skulk!",snd:'flutter', hint:"Shoo the bats!",         scared:"We're just a LITTLE scared.",     btn:"Just a little scared!",  n:5, gone:'fly',     mpos:[352,104]},
  {id:'forest',   intro:"Uh oh! A shadowy, knotted forest!",        short:"shadowy forest", word:"Grumble stomp!",snd:'stomp',   hint:"Stomp the footprints!",  scared:"We're a little MORE scared.",     btn:"A little MORE scared!",  n:5, gone:'stomped', mpos:[55,165]},
@@ -355,71 +548,114 @@ const grave=(x,y,s=1,r=0)=>`<g transform="translate(${x} ${y}) rotate(${r}) scal
 const heart=(x,y,d=0)=>`<g transform="translate(${x} ${y})"><g class="floaty" style="animation-delay:${d}s"><path d="M0 7 C-14 -4 -9 -16 0 -9 C9 -16 14 -4 0 7Z" fill="#ff4f9a" stroke="#fff" stroke-width="1.5"/></g></g>`;
 
 /* ---------- Characters (feet at 0,0, facing right) ---------- */
-const C={
+/* =====================================================================
+   FAMILY v2 — drop-in replacement for `const C={...}` (and family()) in index.html.
+   Costumes now match the book: pirate dad (tricorn with skull, eyepatch,
+   black vest with gold trim, red sash, flashlight), witch kid (grey dress,
+   orange hair, striped stockings), cat girl (green cat mask, green top,
+   yellow tutu, flashlight), werewolf kid (red-brown wolf hood, yellow plaid
+   shirt, jeans, tail), littlest unicorn (purple/pink onesie, rainbow horn),
+   and the dog in a green dinosaur costume.
+   Keys are unchanged so nothing else in the game needs to change:
+     dad, witch, skel (= cat girl now), vamp (= werewolf kid now), uni, dog
+   Same conventions: feet at (0,0), facing right, same heights/widths as v1.
+   ===================================================================== */
+const C=(()=>{
+const K='#1b1024', SKIN='#f4c9a2', SKIN2='#e2a77e';
+const o=(w=2.2)=>`stroke="${K}" stroke-width="${w}" stroke-linejoin="round" stroke-linecap="round"`;
+const shadow=(rx=20)=>`<ellipse cx="0" cy="2" rx="${rx}" ry="4" fill="#000" opacity=".25"/>`;
+const leg=(x,y1,y2,c,w=8)=>`<rect x="${x}" y="${y1}" width="${w}" height="${y2-y1}" rx="3" fill="${c}" ${o(1.8)}/>`;
+const shoe=(x,c='#2a3f8a')=>`<path d="M${x-7} -1 Q${x-7} -7 ${x} -7 Q${x+8} -7 ${x+9} -1Z" fill="${c}" ${o(1.8)}/>`;
+const eyesO=(x1,x2,y,r=3)=>`<circle cx="${x1}" cy="${y}" r="${r}" fill="${K}"/><circle cx="${x2}" cy="${y}" r="${r}" fill="${K}"/><circle cx="${x1+1}" cy="${y-1}" r="${r*.35}" fill="#fff"/><circle cx="${x2+1}" cy="${y-1}" r="${r*.35}" fill="#fff"/>`;
+const cheeks=(x1,x2,y)=>`<circle cx="${x1}" cy="${y}" r="3" fill="#ff8fa8" opacity=".55"/><circle cx="${x2}" cy="${y}" r="3" fill="#ff8fa8" opacity=".55"/>`;
+const torch=(x,y)=>`<g transform="translate(${x} ${y})"><rect x="-2" y="-4" width="14" height="8" rx="2" fill="#3fb7d6" ${o(1.6)}/><rect x="11" y="-5.5" width="5" height="11" rx="1.5" fill="#d8f4ff" ${o(1.6)}/></g>`;
+return {
 dad:()=>`<polygon points="66,-104 160,-150 160,-60" fill="url(#gBeam)"/>
-<ellipse cx="0" cy="2" rx="30" ry="5" fill="#000" opacity=".25"/>
-<rect x="-15" y="-56" width="12" height="54" rx="5" fill="#2b2d5c"/><rect x="3" y="-56" width="12" height="54" rx="5" fill="#2b2d5c"/>
-<ellipse cx="-10" cy="-2" rx="11" ry="5" fill="#1a1a1a"/><ellipse cx="10" cy="-2" rx="11" ry="5" fill="#1a1a1a"/>
-<rect x="-34" y="-110" width="12" height="44" rx="6" fill="#3c8d5a"/>
-<rect x="-25" y="-118" width="50" height="68" rx="18" fill="#3c8d5a"/><rect x="-3" y="-114" width="6" height="62" fill="#2a6a42"/>
-<rect x="18" y="-108" width="36" height="13" rx="6" fill="#3c8d5a"/><rect x="50" y="-110" width="18" height="16" rx="3" fill="#c9c9d6"/><circle cx="50" cy="-101" r="7" fill="#f2c39b"/>
-<circle cx="0" cy="-138" r="23" fill="#f2c39b"/>
-<path d="M-23 -136 Q-22 -158 0 -160 Q22 -158 23 -136 Q14 -150 0 -150 Q-14 -150 -23 -136Z" fill="#6b3d1e"/>
-<ellipse cx="0" cy="-156" rx="32" ry="6" fill="#8a5a2b"/><rect x="-19" y="-178" width="38" height="24" rx="9" fill="#a06a35"/><rect x="-19" y="-163" width="38" height="5" fill="#5a3a1a"/>
-<circle cx="-8" cy="-139" r="6.5" fill="#fff"/><circle cx="8" cy="-139" r="6.5" fill="#fff"/><circle cx="-7" cy="-138" r="3" fill="#222"/><circle cx="9" cy="-138" r="3" fill="#222"/>
-<path d="M-14 -149 l8 -3 M14 -149 l-8 -3" stroke="#5a3a1a" stroke-width="2.5" stroke-linecap="round"/>
-<path d="M-8 -125 q4 -4 8 0 q4 4 8 0" stroke="#7a3b2b" stroke-width="2.5" fill="none" stroke-linecap="round"/>`,
-witch:()=>`<ellipse cx="0" cy="2" rx="20" ry="4" fill="#000" opacity=".25"/>
-<rect x="-10" y="-30" width="8" height="28" fill="#2a1440"/><rect x="2" y="-30" width="8" height="28" fill="#2a1440"/>
-<rect x="-10" y="-24" width="8" height="4" fill="#b98bff"/><rect x="-10" y="-14" width="8" height="4" fill="#b98bff"/><rect x="2" y="-24" width="8" height="4" fill="#b98bff"/><rect x="2" y="-14" width="8" height="4" fill="#b98bff"/>
-<ellipse cx="-7" cy="-2" rx="8" ry="4" fill="#111"/><ellipse cx="7" cy="-2" rx="8" ry="4" fill="#111"/>
-<path d="M-24 -26 L24 -26 L13 -66 L-13 -66Z" fill="#7b3fbf"/><path d="M-12 -62 L-24 -44 M12 -62 L24 -44" stroke="#7b3fbf" stroke-width="7" stroke-linecap="round"/>
-<circle cx="0" cy="-80" r="17" fill="#f6cfa8"/>
-<path d="M-16 -84 Q-22 -64 -14 -58 M16 -84 Q22 -64 14 -58" stroke="#ff8a1f" stroke-width="6" fill="none" stroke-linecap="round"/>
-<ellipse cx="0" cy="-92" rx="26" ry="5" fill="#2a1440"/><path d="M-15 -93 L15 -93 L6 -124 L-4 -119Z" fill="#2a1440"/><rect x="-14" y="-99" width="28" height="5" fill="#ff8a1f"/>
-<circle cx="-6" cy="-80" r="3" fill="#222"/><circle cx="6" cy="-80" r="3" fill="#222"/><circle cx="-11" cy="-74" r="3" fill="#ff9ab0" opacity=".6"/><circle cx="11" cy="-74" r="3" fill="#ff9ab0" opacity=".6"/>
-<ellipse cx="0" cy="-71" rx="3.5" ry="3" fill="#7a2b3b"/>`,
-skel:()=>`<ellipse cx="0" cy="2" rx="20" ry="4" fill="#000" opacity=".25"/>
-<rect x="-11" y="-32" width="9" height="30" rx="3" fill="#1d1d26"/><rect x="2" y="-32" width="9" height="30" rx="3" fill="#1d1d26"/>
-<path d="M-6.5 -28 V-6 M6.5 -28 V-6" stroke="#f4f4f4" stroke-width="3"/>
-<rect x="-17" y="-66" width="34" height="38" rx="10" fill="#1d1d26"/>
-<path d="M0 -62 V-32 M-10 -56 h20 M-11 -49 h22 M-10 -42 h20" stroke="#f4f4f4" stroke-width="3" stroke-linecap="round"/>
-<path d="M-15 -62 L-22 -40 M15 -62 L22 -40" stroke="#1d1d26" stroke-width="8" stroke-linecap="round"/>
-<circle cx="0" cy="-82" r="18" fill="#1d1d26"/><circle cx="0" cy="-81" r="14" fill="#f4f4f4"/>
-<ellipse cx="-5.5" cy="-83" rx="4.5" ry="5" fill="#1d1d26"/><ellipse cx="5.5" cy="-83" rx="4.5" ry="5" fill="#1d1d26"/><circle cx="-5" cy="-82" r="1.5" fill="#fff"/><circle cx="6" cy="-82" r="1.5" fill="#fff"/>
-<path d="M0 -78 l-2 4 h4Z" fill="#1d1d26"/><path d="M-7 -72 h14 M-4 -74 v4 M0 -74 v4 M4 -74 v4" stroke="#1d1d26" stroke-width="1.5"/>`,
-vamp:()=>`<ellipse cx="0" cy="2" rx="20" ry="4" fill="#000" opacity=".25"/>
-<path d="M-26 -8 L-18 -66 L18 -66 L26 -8 Q0 0 -26 -8Z" fill="#c4122f"/>
-<rect x="-10" y="-30" width="8" height="28" fill="#111"/><rect x="2" y="-30" width="8" height="28" fill="#111"/>
-<ellipse cx="-7" cy="-2" rx="8" ry="4" fill="#000"/><ellipse cx="7" cy="-2" rx="8" ry="4" fill="#000"/>
-<rect x="-14" y="-66" width="28" height="40" rx="8" fill="#111"/><path d="M-6 -66 L6 -66 L0 -48Z" fill="#fff"/>
-<path d="M-18 -66 L-26 -94 L-8 -70Z M18 -66 L26 -94 L8 -70Z" fill="#8a0c22"/>
-<circle cx="0" cy="-80" r="17" fill="#e7e0f5"/>
-<path d="M-17 -82 Q-16 -98 0 -98 Q16 -98 17 -82 L9 -88 L0 -80 L-9 -88Z" fill="#111"/>
-<circle cx="-6" cy="-79" r="3" fill="#222"/><circle cx="6" cy="-79" r="3" fill="#222"/>
-<path d="M-6 -71 Q0 -67 6 -71" stroke="#7a2b3b" stroke-width="2" fill="none"/><path d="M-4 -70 l1.5 4 l1.5 -3.4Z M4 -70 l-1.5 4 l-1.5 -3.4Z" fill="#fff"/>`,
-uni:()=>`<ellipse cx="0" cy="2" rx="18" ry="4" fill="#000" opacity=".25"/>
-<rect x="-10" y="-22" width="8" height="20" rx="3" fill="#ff8fd0"/><rect x="2" y="-22" width="8" height="20" rx="3" fill="#ff8fd0"/>
-<ellipse cx="-6" cy="-2" rx="7" ry="4" fill="#9b59ff"/><ellipse cx="6" cy="-2" rx="7" ry="4" fill="#9b59ff"/>
-<path d="M-15 -50 L-28 -72 M15 -50 L28 -72" stroke="#ff8fd0" stroke-width="9" stroke-linecap="round"/>
-<circle cx="-28" cy="-73" r="5" fill="#f6cfa8"/><circle cx="28" cy="-73" r="5" fill="#f6cfa8"/>
-<rect x="-17" y="-56" width="34" height="38" rx="14" fill="#ff8fd0"/><ellipse cx="0" cy="-34" rx="10" ry="12" fill="#ffc8ea"/>
-<path d="M14 -88 Q26 -80 22 -60" stroke="#ff5e5e" stroke-width="5" fill="none" stroke-linecap="round"/><path d="M17 -91 Q31 -80 27 -58" stroke="#ffb84d" stroke-width="5" fill="none" stroke-linecap="round"/><path d="M19 -94 Q36 -80 32 -56" stroke="#7be07b" stroke-width="5" fill="none" stroke-linecap="round"/><path d="M20 -97 Q41 -80 37 -54" stroke="#6ab8ff" stroke-width="5" fill="none" stroke-linecap="round"/>
-<circle cx="0" cy="-72" r="21" fill="#ff8fd0"/>
-<path d="M-15 -86 L-12 -100 L-5 -90Z M15 -86 L12 -100 L5 -90Z" fill="#ff8fd0"/>
-<path d="M-5 -91 L5 -91 L0 -116Z" fill="#ffd84a" stroke="#e0a800" stroke-width="1.5"/><path d="M-3 -98 L3 -100 M-2 -105 L2 -107" stroke="#e0a800" stroke-width="1.5"/>
-<circle cx="0" cy="-70" r="14" fill="#f6cfa8"/>
-<path d="M-9 -73 q3.5 -5 7 0 M2 -73 q3.5 -5 7 0" stroke="#222" stroke-width="2.4" fill="none" stroke-linecap="round"/>
-<path d="M-6 -65 Q0 -57 6 -65Z" fill="#c2185b"/><circle cx="-9" cy="-66" r="3" fill="#ff7fb0" opacity=".7"/><circle cx="9" cy="-66" r="3" fill="#ff7fb0" opacity=".7"/>`,
+${shadow(30)}
+${leg(-15,-58,-4,'#7b7a3c',12)}${leg(3,-58,-4,'#7b7a3c',12)}${shoe(-9,'#3d5bd9')}${shoe(9,'#3d5bd9')}<path d="M-9 -4 h6 M9 -4 h6" stroke="#fff" stroke-width="1.6"/>
+<path d="M-36 -110 Q-40 -88 -30 -70" stroke="${K}" stroke-width="13" fill="none" stroke-linecap="round"/><path d="M-36 -110 Q-40 -88 -30 -70" stroke="#f4f4f0" stroke-width="9" fill="none" stroke-linecap="round"/><circle cx="-30" cy="-68" r="6" fill="${SKIN}" ${o(1.8)}/>
+<rect x="-25" y="-120" width="50" height="66" rx="16" fill="#f4f4f0" ${o()}/>
+<path d="M-24 -116 L-10 -120 L-6 -56 L-24 -60Z M24 -116 L10 -120 L6 -56 L24 -60Z" fill="#2a2630" ${o(1.8)}/>
+<path d="M-10 -120 L-6 -56 M10 -120 L6 -56" stroke="#e5b33a" stroke-width="2.6"/>
+<path d="M-25 -66 L25 -70 L25 -58 L-25 -54Z" fill="#d23b2e" ${o(1.8)}/><path d="M-20 -58 L-26 -34 L-16 -38 L-14 -56Z" fill="#d23b2e" ${o(1.8)}/>
+<path d="M20 -110 Q40 -106 52 -102" stroke="${K}" stroke-width="13" fill="none" stroke-linecap="round"/><path d="M20 -110 Q40 -106 52 -102" stroke="#f4f4f0" stroke-width="9" fill="none" stroke-linecap="round"/>
+<circle cx="52" cy="-101" r="6.5" fill="${SKIN}" ${o(1.8)}/>${torch(52,-104)}
+<circle cx="0" cy="-138" r="22" fill="${SKIN}" ${o()}/>
+<path d="M-16 -126 Q0 -112 16 -126 Q14 -118 0 -116 Q-14 -118 -16 -126Z" fill="#c9a07a" opacity=".55"/>
+<path d="M-22 -146 Q-24 -134 -20 -126 L-17 -140Z" fill="#7a3f22"/>
+<path d="M-30 -150 Q0 -166 30 -150 Q22 -176 0 -178 Q-22 -176 -30 -150Z" fill="#1d1a22" ${o()}/><path d="M-30 -150 Q-38 -160 -34 -168 Q-22 -158 -16 -160" fill="#1d1a22" ${o(1.8)}/><path d="M30 -150 Q38 -160 34 -168 Q22 -158 16 -160" fill="#1d1a22" ${o(1.8)}/>
+<circle cx="0" cy="-166" r="4" fill="#fff"/><path d="M-5 -160 l10 4 M5 -160 l-10 4" stroke="#fff" stroke-width="1.6"/><circle cx="-1.5" cy="-167" r="1" fill="${K}"/><circle cx="1.5" cy="-167" r="1" fill="${K}"/>
+<path d="M-22 -146 L22 -138" stroke="${K}" stroke-width="2"/><ellipse cx="-8" cy="-140" rx="6" ry="5" fill="${K}"/>
+<circle cx="9" cy="-139" r="5.5" fill="#fff" ${o(1.4)}/><circle cx="10" cy="-138" r="2.6" fill="${K}"/>
+<path d="M3 -148 l9 -2" stroke="${K}" stroke-width="2.4" stroke-linecap="round"/>
+<path d="M2 -132 q2 3 -1 4" stroke="${K}" stroke-width="1.6" fill="none"/><path d="M-6 -124 q6 -4 12 0" stroke="#7a3b2b" stroke-width="2.4" fill="none" stroke-linecap="round"/>`,
+witch:()=>`${shadow()}
+${leg(-10,-32,-3,'#fff')}${leg(2,-32,-3,'#fff')}<path d="M-10 -26 h8 M-10 -18 h8 M-10 -10 h8 M2 -26 h8 M2 -18 h8 M2 -10 h8" stroke="#4caf50" stroke-width="3"/>
+<ellipse cx="-7" cy="-2" rx="8" ry="4" fill="#2a1a30" ${o(1.6)}/><ellipse cx="7" cy="-2" rx="8" ry="4" fill="#2a1a30" ${o(1.6)}/>
+<path d="M-16 -86 Q-26 -72 -20 -54 M16 -86 Q26 -72 20 -54" stroke="#e8742a" stroke-width="8" fill="none" stroke-linecap="round"/>
+<path d="M-24 -26 L24 -26 L14 -66 L-14 -66Z" fill="#8e98ad" ${o()}/><path d="M-24 -26 l6 -5 l6 5 l6 -5 l6 5 l6 -5 l6 5 l6 -5" stroke="${K}" stroke-width="1.4" fill="none"/>
+<path d="M-12 -62 L-24 -44 M12 -62 L24 -44" stroke="${K}" stroke-width="10" stroke-linecap="round"/><path d="M-12 -62 L-24 -44 M12 -62 L24 -44" stroke="#8e98ad" stroke-width="7" stroke-linecap="round"/>
+<circle cx="-24" cy="-43" r="4" fill="${SKIN}" ${o(1.4)}/><circle cx="24" cy="-43" r="4" fill="${SKIN}" ${o(1.4)}/>
+<circle cx="0" cy="-80" r="16" fill="${SKIN}" ${o()}/>
+<path d="M-16 -86 Q0 -98 16 -86 Q8 -90 0 -89 Q-8 -90 -16 -86Z" fill="#e8742a"/>
+<ellipse cx="0" cy="-92" rx="26" ry="5" fill="#3a2a52" ${o(1.8)}/><path d="M-14 -94 L14 -94 L8 -114 Q4 -124 -4 -126 L-2 -116Z" fill="#3a2a52" ${o(1.8)}/><rect x="-13" y="-100" width="26" height="4" fill="#9b6ad6"/>
+${eyesO(-6,6,-80,2.8)}${cheeks(-11,11,-74)}
+<path d="M-4 -72 Q0 -69 4 -72" stroke="#7a2b3b" stroke-width="2" fill="none" stroke-linecap="round"/>`,
+skel:()=>`${shadow()}
+${leg(-10,-30,-4,SKIN)}${leg(2,-30,-4,SKIN)}
+<path d="M-12 -14 L-12 -2 L-3 -2 L-3 -14Z M2 -14 L2 -2 L11 -2 L11 -14Z" fill="#f2c230" ${o(1.6)}/>
+<path d="M-14 -66 Q-30 -40 -26 -20 L-16 -28 Z" fill="#f2a530" ${o(1.8)}/>
+<rect x="-14" y="-64" width="28" height="30" rx="8" fill="#8fdc4a" ${o()}/>
+<path d="M-22 -34 L22 -34 L26 -24 L18 -27 L12 -22 L6 -27 L0 -22 L-6 -27 L-12 -22 L-18 -27 L-26 -24Z" fill="#f7cf3a" ${o(1.8)}/>
+<path d="M12 -58 L28 -52" stroke="${K}" stroke-width="9" stroke-linecap="round"/><path d="M12 -58 L28 -52" stroke="#8fdc4a" stroke-width="6" stroke-linecap="round"/>
+<circle cx="30" cy="-51" r="4" fill="#f2c230" ${o(1.4)}/>${torch(30,-53)}
+<path d="M-12 -58 L-20 -40" stroke="${K}" stroke-width="9" stroke-linecap="round"/><path d="M-12 -58 L-20 -40" stroke="#8fdc4a" stroke-width="6" stroke-linecap="round"/><circle cx="-20" cy="-39" r="4" fill="#f2c230" ${o(1.4)}/>
+<path d="M-18 -78 Q-22 -60 -12 -60 M18 -78 Q22 -60 12 -60" stroke="#2a1a22" stroke-width="8" fill="none" stroke-linecap="round"/>
+<circle cx="0" cy="-80" r="16" fill="${SKIN}" ${o()}/>
+<path d="M-17 -84 Q-12 -102 0 -100 Q12 -102 17 -84 Q8 -94 0 -92 Q-8 -94 -17 -84Z" fill="#2a1a22"/>
+<path d="M-17 -84 L-18 -104 L-6 -94 M17 -84 L18 -104 L6 -94" fill="#8fdc4a" ${o(1.8)}/>
+<path d="M-17 -88 Q0 -94 17 -88 L16 -78 Q8 -76 3 -80 L-3 -80 Q-8 -76 -16 -78Z" fill="#8fdc4a" ${o(1.8)}/>
+<ellipse cx="-7" cy="-83" rx="3" ry="2.6" fill="#fff"/><ellipse cx="7" cy="-83" rx="3" ry="2.6" fill="#fff"/><circle cx="-6.5" cy="-83" r="1.6" fill="${K}"/><circle cx="7.5" cy="-83" r="1.6" fill="${K}"/>
+${cheeks(-10,10,-73)}<path d="M-4 -71 Q0 -68 4 -71" stroke="#7a2b3b" stroke-width="2" fill="none" stroke-linecap="round"/>`,
+vamp:()=>`${shadow()}
+<path d="M-14 -36 Q-30 -30 -28 -14 Q-22 -24 -14 -26Z" fill="#a8502e" ${o(1.6)}/>
+${leg(-10,-32,-4,'#5d86c2')}${leg(2,-32,-4,'#5d86c2')}${shoe(-6,'#2f6b3a')}${shoe(6,'#2f6b3a')}
+<rect x="-15" y="-66" width="30" height="36" rx="8" fill="#f0bd3a" ${o()}/>
+<path d="M-15 -56 h30 M-15 -44 h30 M-7 -66 v36 M5 -66 v36" stroke="#b5452e" stroke-width="2" opacity=".75"/><path d="M-15 -50 h30 M-1 -66 v36" stroke="#7a4a1c" stroke-width="1.2" opacity=".6"/>
+<path d="M-13 -60 L-22 -42 M13 -60 L22 -42" stroke="${K}" stroke-width="10" stroke-linecap="round"/><path d="M-13 -60 L-22 -42 M13 -60 L22 -42" stroke="#f0bd3a" stroke-width="7" stroke-linecap="round"/>
+<circle cx="-22" cy="-40" r="4.4" fill="#a8502e" ${o(1.4)}/><circle cx="22" cy="-40" r="4.4" fill="#a8502e" ${o(1.4)}/>
+<path d="M-20 -72 Q-22 -100 -14 -104 L-16 -92 Q0 -102 16 -92 L14 -104 Q22 -100 20 -72 Q14 -62 0 -62 Q-14 -62 -20 -72Z" fill="#b8562e" ${o()}/>
+<path d="M-15 -100 L-12 -94 M15 -100 L12 -94" stroke="#f2b0a0" stroke-width="2.6"/>
+<path d="M-20 -72 l-3 6 l5 -2 M20 -72 l3 6 l-5 -2" fill="#b8562e" ${o(1.4)}/>
+<circle cx="0" cy="-78" r="12" fill="${SKIN}" ${o(1.8)}/>
+${eyesO(-5,5,-80,2.6)}${cheeks(-8,8,-74)}<path d="M-4 -72 Q0 -68 4 -72" stroke="#7a2b3b" stroke-width="2" fill="#fff" stroke-linecap="round"/>`,
+uni:()=>`${shadow(18)}
+<path d="M-12 -28 Q-28 -26 -26 -12 Q-20 -18 -12 -20" fill="#8fdc4a" stroke="${K}" stroke-width="1.6"/>
+<rect x="-10" y="-24" width="9" height="22" rx="4" fill="#c58cf0" ${o(1.8)}/><rect x="1" y="-24" width="9" height="22" rx="4" fill="#c58cf0" ${o(1.8)}/>
+<ellipse cx="-6" cy="-2" rx="7" ry="4" fill="#ff8fd0" ${o(1.6)}/><ellipse cx="6" cy="-2" rx="7" ry="4" fill="#ff8fd0" ${o(1.6)}/>
+<path d="M-15 -50 L-28 -72 M15 -50 L28 -72" stroke="${K}" stroke-width="12" stroke-linecap="round"/><path d="M-15 -50 L-28 -72 M15 -50 L28 -72" stroke="#c58cf0" stroke-width="9" stroke-linecap="round"/>
+<circle cx="-28" cy="-73" r="5.4" fill="#ff8fd0" ${o(1.6)}/><circle cx="28" cy="-73" r="5.4" fill="#ff8fd0" ${o(1.6)}/>
+<rect x="-17" y="-56" width="34" height="38" rx="14" fill="#c58cf0" ${o()}/><ellipse cx="0" cy="-34" rx="10" ry="12" fill="#ffc8ea"/>
+<circle cx="0" cy="-72" r="21" fill="#d59cf5" ${o()}/>
+<path d="M-15 -86 L-13 -100 L-5 -90Z M15 -86 L13 -100 L5 -90Z" fill="#d59cf5" ${o(1.6)}/><path d="M-12 -90 l1 -5 M12 -90 l-1 -5" stroke="#6ad0f0" stroke-width="2.4"/>
+<path d="M-5 -91 L5 -91 L0 -116Z" fill="#ffd84a" ${o(1.6)}/><path d="M-3.6 -96 L3.6 -98 M-2.4 -103 L2.4 -105 M-1.2 -109 L1.2 -110" stroke="#ff7fb0" stroke-width="1.8"/>
+<path d="M14 -86 Q24 -82 22 -70" stroke="#8fdc4a" stroke-width="5" fill="none" stroke-linecap="round"/><path d="M17 -89 Q29 -82 27 -66" stroke="#ffd84a" stroke-width="5" fill="none" stroke-linecap="round"/>
+<circle cx="0" cy="-70" r="14" fill="${SKIN}" ${o(1.8)}/>
+<path d="M-9 -73 q3.5 -5 7 0 M2 -73 q3.5 -5 7 0" stroke="${K}" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+<path d="M-6 -65 Q0 -57 6 -65Z" fill="#c2185b" ${o(1.2)}/><circle cx="-9" cy="-66" r="3" fill="#ff7fb0" opacity=".7"/><circle cx="9" cy="-66" r="3" fill="#ff7fb0" opacity=".7"/>`,
 dog:()=>`<ellipse cx="4" cy="2" rx="26" ry="4" fill="#000" opacity=".25"/>
-<g transform="translate(-22 -24)"><g class="wag"><path d="M0 0 Q-12 -6 -14 -18" stroke="#a8692f" stroke-width="5" fill="none" stroke-linecap="round"/></g></g>
-<rect x="-18" y="-16" width="6" height="16" rx="3" fill="#8a5424"/><rect x="-8" y="-16" width="6" height="16" rx="3" fill="#8a5424"/><rect x="8" y="-16" width="6" height="16" rx="3" fill="#8a5424"/><rect x="16" y="-16" width="6" height="16" rx="3" fill="#8a5424"/>
-<ellipse cx="0" cy="-20" rx="24" ry="13" fill="#a8692f"/>
-<ellipse cx="0" cy="-22" rx="16" ry="12" fill="#ff8a1f"/><path d="M-6 -33 Q-8 -22 -6 -11 M6 -33 Q8 -22 6 -11" stroke="#e8730f" stroke-width="2" fill="none"/>
-<circle cx="24" cy="-34" r="12" fill="#a8692f"/><ellipse cx="34" cy="-30" rx="8" ry="5.5" fill="#c98a4f"/><circle cx="41" cy="-31" r="3" fill="#222"/>
-<path d="M17 -42 Q10 -36 14 -24" stroke="#6b3d1e" stroke-width="7" fill="none" stroke-linecap="round"/>
-<circle cx="27" cy="-37" r="2.6" fill="#222"/><path d="M22 -42 l6 -1" stroke="#222" stroke-width="1.6" stroke-linecap="round"/>`,
+<g transform="translate(-22 -24)"><g class="wag"><path d="M2 2 Q-14 -2 -20 -14 L-8 -6 Z" fill="#4caf50" ${o(1.8)}/></g></g>
+${[-18,-8,8,16].map(x=>`<rect x="${x}" y="-16" width="6" height="16" rx="3" fill="#f4f4f0" ${o(1.4)}/>`).join('')}
+<ellipse cx="0" cy="-20" rx="24" ry="13" fill="#4caf50" ${o()}/>
+<path d="M-16 -31 l4 -8 l4 7 l4 -9 l4 8 l4 -9 l4 8 l4 -7" fill="#f2c230" ${o(1.4)}/>
+<ellipse cx="0" cy="-14" rx="16" ry="6" fill="#c8f0a0" opacity=".7"/>
+<circle cx="25" cy="-34" r="12" fill="#f4f4f0" ${o(1.8)}/>
+<path d="M14 -38 Q16 -50 26 -50 Q36 -50 38 -40 Q30 -44 24 -44 Q18 -44 14 -38Z" fill="#4caf50" ${o(1.6)}/><path d="M19 -47 l2 -5 l3 4 l3 -5 l2 5" fill="#f2c230" ${o(1)}/>
+<ellipse cx="34" cy="-30" rx="8" ry="5.5" fill="#fff" ${o(1.4)}/><circle cx="41" cy="-31" r="3" fill="${K}"/>
+<path d="M16 -40 Q10 -34 14 -24" stroke="#c9b8a8" stroke-width="6" fill="none" stroke-linecap="round"/>
+<circle cx="28" cy="-37" r="2.6" fill="${K}"/><path d="M34 -26 q3 2 6 0" stroke="${K}" stroke-width="1.4" fill="none"/>`,
 };
+})();
 function family({lvl=0,noUni=false}={}){
   let list=[['dad',0],['witch',60],['skel',106],['vamp',152],['uni',198],['dog',240]];
   if(noUni){ list=list.filter(m=>m[0]!=='uni'); list[4]=['dog',200]; }
@@ -434,49 +670,290 @@ function famG(opts={},dx=0,s=.75){
 const fear=ob=>ob<2?0:ob<4?1:2;
 
 /* ---------- The Goon (friendly-silly, green, bumpy bald head, big ears, beady eyes) ---------- */
+/* =====================================================================
+   GOON v2 — drop-in replacement for function goon({hl}) in index.html.
+   Matches the book: yellow-green lumpy bald head with darker spots, big
+   pointed ears (green insides), wide-set googly eyes with green shadow,
+   small upturned nose, huge open grin (a few square teeth, pink tongue),
+   spindly 4-finger hands with teal nails waving up, blue-and-white
+   striped pajamas with tattered hems, big bare green knobby-toed feet.
+   Interface kept identical:
+     - origin ~ body centre, feet bottom ~y 100, head top ~y -114 (same box as v1)
+     - root <g class="goon">
+     - arms in <g class="garmL"> / <g class="garmR"> (waving; origin = shoulder)
+     - highlight groups for the reveal: hl = 'bumps' | 'ears' | 'eyes'
+   ===================================================================== */
 function goon({hl=''}={}){
   const h=p=>hl===p?'hl':'';
+  const K='#1b1024', SK='#d8e35a', SH='#a9c93c', SP='#6f9e2c', FT='#9ad35a', NAIL='#3fd0c0';
+  const sw=`stroke="${K}" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round"`;
+  // spindly hand: palm at 0,0, fingers fan "up" (-y); rotate with r
+  const hand=(x,y,r)=>`<g transform="translate(${x} ${y}) rotate(${r}) scale(1.45)">
+    ${[[-11,-17],[-4,-23],[4,-23],[12,-15]].map(([fx,fy])=>`<path d="M0 0 L${fx} ${fy}" stroke="${K}" stroke-width="7.5" stroke-linecap="round"/><path d="M0 0 L${fx} ${fy}" stroke="${SK}" stroke-width="4" stroke-linecap="round"/><circle cx="${fx}" cy="${fy}" r="2.4" fill="${NAIL}" stroke="${K}" stroke-width="1"/>`).join('')}
+    <ellipse cx="0" cy="1" rx="7.5" ry="6.5" fill="${SK}" ${sw}/></g>`;
+  // striped sleeve / leg as a stroke (outline underlay + stripe pattern)
+  const limb=(d,w)=>`<path d="${d}" stroke="${K}" stroke-width="${w+5}" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="${d}" stroke="url(#gnStripe)" stroke-width="${w}" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`;
+  const wrist=(d)=>`<path d="${d}" stroke="${K}" stroke-width="9" fill="none" stroke-linecap="round"/><path d="${d}" stroke="${SK}" stroke-width="5" fill="none" stroke-linecap="round"/>`;
+  const toes=(pts,dx)=>pts.map(([x,y,r])=>`<circle cx="${x}" cy="${y}" r="${r}" fill="${FT}" ${sw}/><circle cx="${x+dx*r*.45}" cy="${y}" r="${r*.38}" fill="${NAIL}"/>`).join('');
   return `<g class="goon">
-<g><g class="garmL"><path d="M-50 10 Q-80 -10 -84 -40" stroke="#6ccf2c" stroke-width="18" stroke-linecap="round" fill="none"/></g></g>
-<g><g class="garmR"><path d="M50 10 Q80 -10 84 -40" stroke="#6ccf2c" stroke-width="18" stroke-linecap="round" fill="none"/></g></g>
-<ellipse cx="-24" cy="92" rx="22" ry="9" fill="#4fae1a"/><ellipse cx="24" cy="92" rx="22" ry="9" fill="#4fae1a"/>
-<path d="M-58 88 Q-70 0 -44 -30 L44 -30 Q70 0 58 88Z" fill="#7ee03a"/>
-<ellipse cx="0" cy="40" rx="30" ry="34" fill="#b4f77f" opacity=".6"/>
-<g><g class="${h('ears')}"><ellipse cx="-58" cy="-62" rx="18" ry="28" fill="#6ccf2c" transform="rotate(-20 -58 -62)"/><ellipse cx="-58" cy="-62" rx="9" ry="16" fill="#4fae1a" transform="rotate(-20 -58 -62)"/><ellipse cx="58" cy="-62" rx="18" ry="28" fill="#6ccf2c" transform="rotate(20 58 -62)"/><ellipse cx="58" cy="-62" rx="9" ry="16" fill="#4fae1a" transform="rotate(20 58 -62)"/></g></g>
-<ellipse cx="0" cy="-58" rx="50" ry="44" fill="#8af04a"/>
-<g><g class="${h('bumps')}"><circle cx="-30" cy="-92" r="11" fill="#8af04a"/><circle cx="-9" cy="-100" r="12" fill="#8af04a"/><circle cx="14" cy="-99" r="11" fill="#8af04a"/><circle cx="34" cy="-88" r="10" fill="#8af04a"/><circle cx="-12" cy="-98" r="4" fill="#b4f77f"/><circle cx="12" cy="-97" r="3.5" fill="#b4f77f"/></g></g>
-<g><g class="${h('eyes')}"><circle cx="-15" cy="-62" r="6" fill="#111"/><circle cx="15" cy="-62" r="6" fill="#111"/><circle cx="-13" cy="-64" r="2" fill="#fff"/><circle cx="17" cy="-64" r="2" fill="#fff"/></g></g>
-<path d="M-26 -38 Q0 -6 26 -38Z" fill="#4a1036"/><rect x="-8" y="-38" width="9" height="9" rx="2" fill="#fff"/><path d="M-10 -22 Q0 -14 10 -22Z" fill="#ff6f9a"/>
-<circle cx="-34" cy="-44" r="7" fill="#ff9ab0" opacity=".5"/><circle cx="34" cy="-44" r="7" fill="#ff9ab0" opacity=".5"/>
+<defs><pattern id="gnStripe" width="14" height="14" patternUnits="userSpaceOnUse"><rect width="14" height="14" fill="#f3f7ff"/><rect width="7" height="14" fill="#3d98d6"/></pattern></defs>
+<ellipse cx="0" cy="100" rx="62" ry="7" fill="#000" opacity=".22"/>
+<!-- planted leg + foot (left) -->
+<path d="M-30 36 L-6 36 L-10 80 L-15 76 L-20 82 L-26 77 L-33 82Z" fill="url(#gnStripe)" ${sw}/>
+<g transform="translate(-24 84) scale(1.3) translate(24 -84)">
+<path d="M-22 80 C-14 84 -14 96 -24 98 L-58 98 C-66 96 -64 86 -54 84 C-44 82 -32 82 -22 80Z" fill="${FT}" ${sw}/>
+${toes([[-60,93,5],[-58,84,4.4],[-52,79,4],[-45,78,3.6]],-1)}
+<path d="M-40 92 q6 -3 12 0" stroke="${SP}" stroke-width="2" fill="none"/></g>
+<!-- raised dancing leg + foot (right) -->
+<path d="M4 34 L34 32 L64 44 L66 60 L52 72 L46 66 L40 70 L38 62 L46 54 L24 58Z" fill="url(#gnStripe)" ${sw}/>
+<g transform="translate(44 72) scale(1.3) translate(-44 -72)"><path d="M44 66 C52 62 66 66 76 72 C86 78 82 90 72 88 L46 84 C38 82 36 70 44 66Z" fill="${FT}" ${sw}/>
+${toes([[80,84,5],[82,75,4.4],[77,68,4],[70,64,3.6]],1)}
+<circle cx="58" cy="78" r="2.6" fill="${SP}"/></g>
+<!-- pajama top with tattered hem -->
+<path d="M-34 -10 Q0 -16 34 -10 L40 18 L42 44 L34 40 L28 47 L20 41 L12 48 L4 42 L-4 48 L-12 41 L-20 47 L-28 40 L-38 45 L-38 18Z" fill="url(#gnStripe)" ${sw}/>
+<path d="M22 -10 L40 18 L42 44 L34 40 L28 47 L22 42Z" fill="#1d3b6e" opacity=".14"/>
+<path d="M-15 -12 L-2 6 L-20 2Z M15 -13 L3 6 L20 2Z" fill="#f3f7ff" ${sw}/>
+<path d="M0 6 V40" stroke="${K}" stroke-width="2" opacity=".5"/>
+<circle cx="4" cy="14" r="2.3" fill="#2a5aa0"/><circle cx="4" cy="26" r="2.3" fill="#2a5aa0"/><circle cx="4" cy="37" r="2.3" fill="#2a5aa0"/>
+<!-- arms (waving) -->
+<g><g class="garmL">${limb('M-30 -4 Q-64 -2 -72 -32',13)}<path d="M-79 -32 l3 -6 l4 4 l4 -5 l3 6" fill="none" stroke="${K}" stroke-width="2"/>${wrist('M-73 -36 L-78 -52')}${hand(-80,-58,-14)}</g></g>
+<g><g class="garmR">${limb('M30 -6 Q62 -10 70 -42',13)}<path d="M63 -42 l3 -6 l4 4 l4 -5 l3 6" fill="none" stroke="${K}" stroke-width="2"/>${wrist('M71 -46 L76 -62')}${hand(78,-68,14)}</g></g>
+<g transform="translate(0 -10) scale(1.12) translate(0 10)">
+<!-- ears -->
+<g><g class="${h('ears')}">
+ <path d="M-38 -80 C-54 -86 -66 -94 -76 -106 C-76 -86 -66 -62 -42 -50Z" fill="${SK}" ${sw}/>
+ <path d="M-44 -76 C-54 -80 -62 -86 -68 -94 C-68 -82 -60 -66 -46 -58Z" fill="#7fbf3a"/>
+ <path d="M38 -82 C54 -88 66 -96 76 -108 C76 -88 66 -64 42 -52Z" fill="${SK}" ${sw}/>
+ <path d="M44 -78 C54 -82 62 -88 68 -96 C68 -84 60 -68 46 -60Z" fill="#7fbf3a"/>
+</g></g>
+<!-- head -->
+<path d="M-44 -44 C-52 -72 -42 -100 -16 -108 C-4 -113 10 -113 22 -107 C42 -98 52 -72 46 -44 C44 -22 26 -10 0 -10 C-26 -10 -42 -24 -44 -44Z" fill="${SK}" ${sw}/>
+<path d="M34 -96 C48 -82 50 -60 44 -40 C40 -24 28 -14 10 -11 C30 -22 40 -44 34 -96Z" fill="${SH}" opacity=".7"/>
+<g><g class="${h('bumps')}">
+ <path d="M-34 -96 A7 7 0 0 1 -21 -104" fill="${SK}" ${sw}/><path d="M-12 -110 A8 8 0 0 1 4 -112" fill="${SK}" ${sw}/><path d="M12 -111 A7 7 0 0 1 26 -105" fill="${SK}" ${sw}/><path d="M33 -98 A6 6 0 0 1 41 -88" fill="${SK}" ${sw}/>
+ <circle cx="-22" cy="-96" r="3.4" fill="${SP}"/><circle cx="-6" cy="-102" r="2.4" fill="${SP}"/><circle cx="10" cy="-100" r="3.8" fill="${SP}"/><circle cx="26" cy="-94" r="2.6" fill="${SP}"/><circle cx="-36" cy="-80" r="2.2" fill="${SP}"/><circle cx="38" cy="-74" r="2.8" fill="${SP}"/><circle cx="-30" cy="-30" r="2.2" fill="${SP}"/><circle cx="36" cy="-36" r="2" fill="${SP}"/>
+</g></g>
+<!-- eyes: wide-set googly with green shadow -->
+<g><g class="${h('eyes')}">
+ <ellipse cx="-19" cy="-74" rx="13" ry="11" fill="#8fc23c"/><ellipse cx="18" cy="-76" rx="13" ry="11" fill="#8fc23c"/>
+ <g class="blink"><ellipse cx="-19" cy="-75" rx="9" ry="8.5" fill="#fff" ${sw}/><ellipse cx="18" cy="-77" rx="9" ry="8.5" fill="#fff" ${sw}/>
+ <circle cx="-15" cy="-75" r="3.4" fill="${K}"/><circle cx="22" cy="-77" r="3.4" fill="${K}"/><circle cx="-14" cy="-76.5" r="1" fill="#fff"/><circle cx="23" cy="-78.5" r="1" fill="#fff"/></g>
+ <path d="M-31 -86 Q-20 -92 -9 -86 M7 -88 Q18 -94 30 -88" stroke="${K}" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+</g></g>
+<!-- small upturned nose -->
+<path d="M-6 -60 Q-7 -68 0 -70 Q7 -68 6 -60 Q0 -56 -6 -60Z" fill="${SH}" stroke="${K}" stroke-width="2.4" stroke-linejoin="round"/>
+<circle cx="-2.6" cy="-61" r="1.3" fill="${K}"/><circle cx="2.6" cy="-61" r="1.3" fill="${K}"/>
+<!-- huge open grin: square teeth + pink tongue -->
+<path d="M-38 -54 Q-2 -42 40 -58 Q34 -18 2 -18 Q-32 -18 -38 -54Z" fill="#1a0b14" ${sw}/>
+<rect x="-25" y="-50" width="6.5" height="7" rx="1" fill="#fffbe8" stroke="${K}" stroke-width="1.6"/><rect x="-8" y="-48" width="6.5" height="7.5" rx="1" fill="#fffbe8" stroke="${K}" stroke-width="1.6"/><rect x="16" y="-51" width="6.5" height="7" rx="1" fill="#fffbe8" stroke="${K}" stroke-width="1.6"/>
+<path d="M-6 -24 Q-6 -38 8 -38 Q22 -38 20 -26 Q14 -19 6 -20 Q-2 -19 -6 -24Z" fill="#ff8fb3" stroke="${K}" stroke-width="2"/><path d="M7 -35 V-24" stroke="#d9567f" stroke-width="2" stroke-linecap="round"/>
+<path d="M-42 -50 q-4 4 -2 9 M42 -56 q5 4 3 10" stroke="${K}" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+</g>
 </g>`;
 }
 
 /* ---------- Hidden monsters: peek (hiding) & found versions ---------- */
-const MON={
- pumpkin:{name:"a giggly jack-o'-lantern", say:"Hee hee!",
-  peek:()=>`<g class="pk">${pk(0,0,1.15)}<g><g class="blink"><path d="M-12 -4 l6 -9 l6 9z M6 -4 l6 -9 l6 9z" fill="#ffe14d" filter="url(#fGlow)"/></g></g></g>`,
-  found:(st)=>`<g class="fd">${pk(0,0,1.3)}<path d="M-14 -5 l7 -11 l7 11z M7 -5 l7 -11 l7 11z" fill="#ffe14d"/><path d="M-15 6 Q0 22 15 6 L10 10 L5 5 L0 11 L-5 5 L-10 10Z" fill="#ffe14d"/><path d="M-36 0 l-12 -12 M36 0 l12 -12" stroke="#3f7a2a" stroke-width="4" stroke-linecap="round"/>${st?star(30,-30):''}</g>`},
- swamp:{name:"a bubbly swamp creature", say:"Blub blub!",
-  peek:()=>`<g class="pk"><ellipse cx="0" cy="18" rx="28" ry="6" fill="#2a5a2a" opacity=".8"/><path d="M-8 16 Q-12 -4 -10 -14 M8 16 Q12 -4 10 -14" stroke="#4fae3a" stroke-width="6" fill="none" stroke-linecap="round"/><g><g class="blink"><circle cx="-10" cy="-18" r="9" fill="#fff"/><circle cx="10" cy="-18" r="9" fill="#fff"/><circle cx="-9" cy="-17" r="4" fill="#222"/><circle cx="11" cy="-17" r="4" fill="#222"/></g></g></g>`,
-  found:(st)=>`<g class="fd"><path d="M-30 22 Q-32 -16 0 -22 Q32 -16 30 22Z" fill="#5fd35f"/><path d="M-10 -18 Q-14 -32 -12 -40 M10 -18 Q14 -32 12 -40" stroke="#5fd35f" stroke-width="6" fill="none" stroke-linecap="round"/><circle cx="-12" cy="-42" r="9" fill="#fff"/><circle cx="12" cy="-42" r="9" fill="#fff"/><circle cx="-11" cy="-41" r="4" fill="#222"/><circle cx="13" cy="-41" r="4" fill="#222"/><path d="M-14 2 Q0 16 14 2Z" fill="#1f5a1f"/><circle cx="-20" cy="-4" r="4" fill="#ff9ab0" opacity=".7"/><circle cx="20" cy="-4" r="4" fill="#ff9ab0" opacity=".7"/><ellipse cx="0" cy="22" rx="38" ry="7" fill="#3e7a3c"/>${st?star(30,-42):''}</g>`},
- tunnel:{name:"a fluttery bat-blob", say:"Squeak!",
-  peek:()=>`<g class="pk"><path d="M-24 -14 L-6 -20 L4 -12 L20 -18 L26 8 L6 16 L-10 10 L-26 14Z" fill="#0b0705" stroke="#5a4434" stroke-width="2"/><g><g class="blink"><circle cx="-6" cy="-2" r="5" fill="#ff5ef0" filter="url(#fGlow)"/><circle cx="8" cy="-2" r="5" fill="#ff5ef0" filter="url(#fGlow)"/></g></g></g>`,
-  found:(st)=>`<g class="fd">${batWing('#6b3fbf',56)}<circle r="26" fill="#9b59ff" stroke="#7a3fd9" stroke-width="6" stroke-dasharray="4 5"/><path d="M-12 -22 L-16 -36 L-5 -25Z M12 -22 L16 -36 L5 -25Z" fill="#9b59ff"/><circle cy="-4" r="11" fill="#fff"/><circle cy="-3" r="5" fill="#222"/><path d="M-10 10 Q0 18 10 10" stroke="#3a1466" stroke-width="3" fill="none"/><path d="M-5 12 l2.5 5 l2.5 -5Z" fill="#fff"/>${st?star(26,-28):''}</g>`},
- forest:{name:"a shaggy forest monster", say:"Grr-hee hee!",
-  peek:()=>`<g class="pk"><rect x="-26" y="-40" width="52" height="80" rx="12" fill="#4a3020"/><ellipse cx="0" cy="0" rx="17" ry="22" fill="#120a06"/><g><g class="blink"><ellipse cx="-6" cy="-4" rx="4" ry="5" fill="#ffd84a" filter="url(#fGlow)"/><ellipse cx="6" cy="-4" rx="4" ry="5" fill="#ffd84a" filter="url(#fGlow)"/></g></g></g>`,
-  found:(st)=>`<g class="fd"><path d="M-28 30 L-32 -6 Q-30 -30 0 -32 Q30 -30 32 -6 L28 30 L20 22 L12 30 L4 22 L-4 30 L-12 22 L-20 30Z" fill="#8a5a3a"/><path d="M-20 -26 L-28 -46 L-11 -31Z M20 -26 L28 -46 L11 -31Z" fill="#f2e2b0"/><circle cx="-10" cy="-10" r="7" fill="#ffd84a"/><circle cx="10" cy="-10" r="7" fill="#ffd84a"/><circle cx="-10" cy="-10" r="3" fill="#222"/><circle cx="10" cy="-10" r="3" fill="#222"/><path d="M-12 6 Q0 17 12 6Z" fill="#3a1a10"/><path d="M-8 7 l3 5 l3 -5Z M2 7 l3 5 l3 -5Z" fill="#fff"/>${st?star(28,-34):''}</g>`},
- graveyard:{name:"a peek-a-boo ghost", say:"Boo-hoo-hee!",
-  peek:()=>`<g class="pk"><path d="M12 -30 Q32 -36 36 -12 L36 20 L20 20Z" fill="#f4f1ff"/><circle cx="27" cy="-16" r="3.5" fill="#222"/><path d="M-22 26 L-22 -14 Q-22 -36 0 -36 Q22 -36 22 -14 L22 26Z" fill="#8d86a8" stroke="#5a5470" stroke-width="3"/><text x="0" y="-6" text-anchor="middle" font-size="12" font-weight="bold" fill="#5a5470">RIP</text></g>`,
-  found:(st)=>`<g class="fd"><g><g class="floaty"><path d="M-20 -12 Q-22 -58 0 -58 Q22 -58 20 -12 L20 2 L13 -4 L7 2 L0 -4 L-7 2 L-13 -4 L-20 2Z" fill="#f4f1ff"/><ellipse cx="-7" cy="-40" rx="3.5" ry="5" fill="#222"/><ellipse cx="7" cy="-40" rx="3.5" ry="5" fill="#222"/><ellipse cx="0" cy="-28" rx="4" ry="5" fill="#222"/><circle cx="-13" cy="-32" r="3" fill="#ff9ab0" opacity=".7"/><circle cx="13" cy="-32" r="3" fill="#ff9ab0" opacity=".7"/></g></g><path d="M-22 26 L-22 -6 Q-22 -22 0 -22 Q22 -22 22 -6 L22 26Z" fill="#8d86a8" stroke="#5a5470" stroke-width="3"/><text x="0" y="10" text-anchor="middle" font-size="12" font-weight="bold" fill="#5a5470">RIP</text>${st?star(28,-50):''}</g>`},
- house:{name:"a sneaky mummy", say:"Peek-a-boo!",
-  peek:()=>`<g class="pk"><rect x="-24" y="-28" width="48" height="56" rx="4" fill="#ffd84a"/><rect x="-16" y="-6" width="32" height="34" rx="10" fill="#efe3c2"/><path d="M-16 2 h32 M-16 12 h32 M-16 21 h32" stroke="#c9b98f" stroke-width="3"/><g><g class="blink"><circle cx="-6" cy="5" r="3.5" fill="#222"/><circle cx="6" cy="5" r="3.5" fill="#222"/></g></g><rect x="-24" y="-28" width="48" height="56" rx="4" fill="none" stroke="#1a0d26" stroke-width="5"/><path d="M0 -28 V-8 M-24 -8 H24" stroke="#1a0d26" stroke-width="4"/></g>`,
-  found:(st)=>`<g class="fd"><path d="M-18 -10 L-34 -30" stroke="#efe3c2" stroke-width="10" stroke-linecap="round"/><path d="M18 -10 L30 6" stroke="#efe3c2" stroke-width="10" stroke-linecap="round"/><rect x="-19" y="-38" width="38" height="72" rx="17" fill="#efe3c2"/><path d="M-19 -18 L19 -26 M-19 -4 L19 -12 M-19 10 L19 2 M-19 22 L19 14" stroke="#c9b98f" stroke-width="3"/><rect x="-14" y="-30" width="28" height="11" rx="5" fill="#3a2a1a"/><circle cx="-6" cy="-24.5" r="3.5" fill="#fff"/><circle cx="6" cy="-24.5" r="3.5" fill="#fff"/><circle cx="-6" cy="-24" r="1.6" fill="#222"/><circle cx="6" cy="-24" r="1.6" fill="#222"/><path d="M-5 -12 Q0 -8 5 -12" stroke="#7a5a3a" stroke-width="2" fill="none"/>${st?star(26,-40):''}</g>`},
-};
+/* =====================================================================
+   HIDDEN MONSTERS v2 — drop-in replacement for `const MON={...}` in index.html.
+   Same keys (one per obstacle id), same shape: {name, say, peek(), found(st)}.
+   peek(): small "hiding" art wrapped in <g class="pk"> (fits the r=44 hit circle)
+   found(st): full monster wrapped in <g class="fd">, feet/base near y≈+30;
+              when st is truthy a star(x,y) badge is added (same as v1).
+   Relies on existing index.html helpers: pk(), star(), grave().
+   Monsters now mirror the book pages (Michael Rex, We're Going on a Goon Hunt):
+     pumpkin   -> zombie (book: stumbles through the pumpkin patch, "Stumble grab!")
+     swamp     -> swamp creature (Creature-from-the-Black-Lagoon style)
+     tunnel    -> goblin in a long rust-brown hooded coat
+     forest    -> Frankenstein's monster
+     graveyard -> the old-couple ghosts
+     house     -> mummy peeking out of a gold oval mirror
+   ===================================================================== */
+const MON=(()=>{
+const K='#1b1024';
+const o=(w=2.6)=>`stroke="${K}" stroke-width="${w}" stroke-linejoin="round" stroke-linecap="round"`;
+const blinkEyes=(xs,y,r=4.6,p=2,dx=.8)=>`<g><g class="blink">${xs.map(x=>`<circle cx="${x}" cy="${y}" r="${r}" fill="#fff" ${o(1.8)}/><circle cx="${x+dx}" cy="${y+.4}" r="${p}" fill="${K}"/>`).join('')}</g></g>`;
+const limb=(d,c,w=7)=>`<path d="${d}" stroke="${K}" stroke-width="${w+4}" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="${d}" stroke="${c}" stroke-width="${w}" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`;
+const hand=(x,y,r,c,s=1,nail)=>`<g transform="translate(${x} ${y}) rotate(${r}) scale(${s})">${[[-5,-8],[-1.5,-10],[2,-10],[5.5,-7]].map(([a,b])=>`<path d="M0 0 L${a} ${b}" stroke="${K}" stroke-width="5" stroke-linecap="round"/><path d="M0 0 L${a} ${b}" stroke="${c}" stroke-width="2.6" stroke-linecap="round"/>${nail?`<circle cx="${a}" cy="${b}" r="1.1" fill="${nail}"/>`:''}`).join('')}<circle r="4" fill="${c}" ${o(1.8)}/></g>`;
+
+/* ---------- ZOMBIE (pumpkin patch) ---------- */
+const ZG='#86c34e', ZG2='#5f9a36';
+const zHead=()=>`<path d="M-15 -30 L15 -30 L17 -2 Q0 6 -17 -2Z" fill="${ZG}" ${o()}/>
+ <path d="M10 -6 Q16 -10 16 -18" stroke="${ZG2}" stroke-width="3" fill="none"/>
+ <path d="M-18 -22 L-17 -34 Q0 -41 17 -34 L18 -22 L13 -27 L8 -22 L3 -28 L-2 -22 L-7 -28 L-12 -22Z" fill="#1d1a22" ${o(2)}/>
+ <path d="M-14 -12 l6 -6 M-13 -17 l3 3 M-11 -19 l3 3" stroke="${K}" stroke-width="1.4"/>
+ <ellipse cx="-7" cy="-16" rx="6" ry="5.4" fill="${ZG2}"/><ellipse cx="7" cy="-16" rx="6" ry="5.4" fill="${ZG2}"/>
+ ${blinkEyes([-7,7],-16.5,4.4,1.7,0)}
+ <path d="M-2 -11 Q0 -7 2 -11" stroke="${K}" stroke-width="1.6" fill="none"/>
+ <path d="M-11 -7 Q0 -3 11 -7 L10 -1 Q0 3 -10 -1Z" fill="#fffbe8" ${o(2)}/><path d="M-6 -6 V0 M-2 -5 V1.5 M2 -5 V1.5 M6 -6 V0" stroke="${K}" stroke-width="1.2"/>`;
+const zombie={name:"a stumbly zombie", say:"Stumble grab, HUG!",
+ peek:()=>`<g class="pk">${hand(-26,-8,-30,ZG,1.2)}<g transform="translate(0 -3)">${zHead()}</g>${pk(0,18,1.05)}${hand(24,-2,25,ZG,1.1)}</g>`,
+ found:(st)=>`<g class="fd"><g transform="scale(.98) translate(0 2)">
+  <ellipse cx="0" cy="34" rx="26" ry="4" fill="#000" opacity=".25"/>
+  ${limb('M-8 6 L-14 30','#4f7a3a',9)}${limb('M6 6 L16 28','#4f7a3a',9)}
+  <path d="M-21 33 Q-21 26 -12 27 L-6 30 Q-6 34 -12 34Z" fill="#4a2e1c" ${o(2)}/><path d="M12 31 Q12 24 21 25 L27 28 Q27 33 21 33Z" fill="#4a2e1c" ${o(2)}/>
+  <path d="M-12 26 l2 3 l2 -3 l2 3 M12 24 l2 3 l2 -3 l2 3" stroke="${K}" stroke-width="1.2" fill="none"/>
+  <path d="M-14 -26 L14 -26 L16 10 L11 6 L7 12 L2 7 L-3 12 L-8 6 L-12 11 L-16 7Z" fill="#e8e4d4" ${o()}/>
+  <path d="M-14 -26 L-6 -26 L-5 8 L-12 11 L-16 7Z" fill="#e7b53c" ${o(2)}/><path d="M14 -26 L6 -26 L5 8 L11 6 L16 10Z" fill="#e7b53c" ${o(2)}/>
+  <path d="M-13 -18 h7 M-13 -10 h7 M-13 -2 h7 M7 -18 h7 M7 -10 h7 M7 -2 h7" stroke="#9a6a1c" stroke-width="2"/>
+  <path d="M-15 -4 L15 -12 L15 -6 L-15 2Z" fill="#d23b2e" ${o(2)}/><path d="M12 -8 L18 4 L13 6Z" fill="#d23b2e" ${o(1.6)}/>
+  <path d="M-1 -14 l3 4 l-3 3" stroke="${K}" stroke-width="1.2" fill="none"/>
+  ${limb('M-11 -22 Q8 -30 26 -24','#e8e4d4',8)}${hand(29,-24,95,ZG,1.15)}
+  ${limb('M11 -18 Q22 -16 32 -12','#e8e4d4',8)}${hand(35,-12,100,ZG,1.15)}
+  <path d="M22 -28 l2 6 l3 -5 M27 -16 l2 6 l3 -5" stroke="${K}" stroke-width="1.4" fill="#e8e4d4"/>
+  <g transform="translate(2 -24)">${zHead()}</g></g>${st?star(28,-50):''}</g>`};
+
+/* ---------- SWAMP CREATURE ---------- */
+const SG='#62c043', SG2='#3a8a2c', SB='#efe48a', SF='#9be36a';
+const scales=(pts)=>pts.map(([x,y])=>`<path d="M${x-3} ${y} q3 -3 6 0" stroke="${SG2}" stroke-width="1.6" fill="none"/>`).join('');
+const sHead=()=>`<path d="M-8 -27 L-5 -40 L-1 -30 L3 -43 L7 -29 L11 -37 L12 -24Z" fill="${SF}" ${o(2)}/>
+ <path d="M-17 -16 L-27 -24 L-25 -10 L-18 -4Z M17 -16 L27 -24 L25 -10 L18 -4Z" fill="${SF}" ${o(2)}/>
+ <path d="M-18 0 Q-21 -28 0 -30 Q21 -28 18 0 Q0 6 -18 0Z" fill="${SG}" ${o()}/>
+ ${scales([[-10,-24],[0,-26],[10,-24],[-12,-6],[12,-6]])}
+ <path d="M-14 -18 Q-7 -24 -1 -19 M1 -19 Q7 -24 14 -18" stroke="${K}" stroke-width="2.2" fill="none"/>
+ ${blinkEyes([-7,7],-14,4.6,2,.6)}
+ <path d="M-12 -4 Q0 4 12 -4" stroke="${K}" stroke-width="2.4" fill="#2a1420"/><path d="M-6 -2 l1.5 3.5 l1.5 -3 M3 -2 l1.5 3 l1.5 -3.5" fill="#fff" stroke="${K}" stroke-width=".8"/>`;
+const webHand=(x,y,r,s=1)=>`<g transform="translate(${x} ${y}) rotate(${r}) scale(${s})"><path d="M-6 0 L-8 -10 L-3 -6 L0 -12 L3 -6 L8 -10 L6 0 Q0 4 -6 0Z" fill="${SG}" ${o(1.8)}/><path d="M-8 -10 l-1 -3 M0 -12 v-3 M8 -10 l1 -3" stroke="${K}" stroke-width="1.6"/></g>`;
+const swamp={name:"a splashy swamp creature", say:"Blub blub!",
+ peek:()=>`<g class="pk"><ellipse cx="0" cy="18" rx="32" ry="7" fill="#2a5a2a" opacity=".85"/>${webHand(-24,10,-25,1.2)}<g transform="translate(0 16) scale(.95)">${sHead()}</g><path d="M-30 18 Q0 26 30 18" stroke="#9fe39a" stroke-width="2" fill="none" opacity=".7"/><ellipse cx="0" cy="22" rx="36" ry="5" fill="#3e7a3c"/></g>`,
+ found:(st)=>`<g class="fd"><g transform="scale(1)">
+  <ellipse cx="0" cy="34" rx="30" ry="5" fill="#000" opacity=".25"/>
+  ${limb('M-6 8 Q-18 18 -22 30',SG,9)}${limb('M6 8 Q16 16 20 30',SG,9)}
+  <path d="M-30 32 L-24 26 L-14 28 L-12 33Z M12 33 L14 28 L24 26 L30 32Z" fill="${SG}" ${o(1.8)}/>
+  <path d="M-24 18 L-32 12 L-26 24Z M24 18 L32 12 L26 24Z" fill="${SF}" ${o(1.6)}/>
+  <path d="M-15 -24 Q0 -30 15 -24 L14 10 Q0 16 -14 10Z" fill="${SG}" ${o()}/>
+  <path d="M-9 -20 Q0 -23 9 -20 L8 10 Q0 13 -8 10Z" fill="${SB}" ${o(1.6)}/>
+  <path d="M-9 -12 Q0 -9 9 -12 M-9 -4 Q0 -1 9 -4 M-8 4 Q0 7 8 4" stroke="#b8a84a" stroke-width="1.6" fill="none"/>
+  ${scales([[-12,-14],[12,-14],[-12,0],[12,0]])}
+  ${limb('M-13 -20 Q-28 -30 -36 -44',SG,8)}<path d="M-26 -30 L-34 -26 L-30 -36Z" fill="${SF}" ${o(1.4)}/>${webHand(-38,-47,-35,1.2)}
+  ${limb('M13 -18 Q28 -10 34 4',SG,8)}<path d="M26 -12 L34 -16 L32 -4Z" fill="${SF}" ${o(1.4)}/>${webHand(35,8,160,1.2)}
+  <g transform="translate(0 -22)">${sHead()}</g></g>${st?star(30,-50):''}</g>`};
+
+/* ---------- GOBLIN (tunnel) ---------- */
+const GF='#bfe0a2', GF2='#93bf78', GC='#a8542a', GC2='#7a3a1c', GL='#5aa6d8';
+const gHead=()=>`<path d="M-12 -14 L-34 -22 L-14 -4Z M12 -14 L34 -22 L14 -4Z" fill="${GF}" ${o(2.2)}/>
+ <path d="M-14 -10 Q-15 -30 0 -31 Q15 -30 14 -10 Q12 6 0 6 Q-12 6 -14 -10Z" fill="${GF}" ${o()}/>
+ <path d="M6 -28 Q13 -22 13 -10" stroke="${GF2}" stroke-width="3" fill="none"/>
+ <path d="M-11 -20 L-2 -16 M11 -20 L2 -16" stroke="${K}" stroke-width="2.2"/>
+ ${blinkEyes([-6,6],-13,3.6,1.6,.6)}
+ <path d="M0 -14 Q6 -6 3 0 Q0 1 -1 -2" fill="${GF2}" ${o(1.8)}/>
+ <path d="M-9 0 Q0 7 9 0" stroke="${K}" stroke-width="2" fill="#2a1420"/><path d="M-6 1 v2.5 M-3 2.4 v3 M3 2.4 v3 M6 1 v2.5" stroke="#fff" stroke-width="1.8"/>`;
+const goblin={name:"a sneaky goblin", say:"Hee hee hee!",
+ peek:()=>`<g class="pk"><path d="M-26 -16 L-6 -22 L4 -14 L22 -20 L28 8 L6 18 L-10 12 L-28 16Z" fill="#0b0705" stroke="#5a4434" stroke-width="2"/><g transform="translate(-2 10) scale(.85)"><path d="M-17 -6 Q-18 -36 0 -38 Q18 -36 17 -6Z" fill="${GC}" ${o(2)}/>${gHead()}</g>${hand(18,6,40,GF,1.1)}</g>`,
+ found:(st)=>`<g class="fd"><g transform="scale(1)">
+  <ellipse cx="0" cy="34" rx="28" ry="4" fill="#000" opacity=".25"/>
+  <path d="M-16 28 Q-16 22 -8 23 L-3 27 Q-3 31 -9 31Z M6 30 Q6 24 14 25 L20 28 Q20 32 14 32Z" fill="#3a2418" ${o(1.8)}/>
+  <path d="M-14 -22 Q-2 -34 14 -24 Q24 -6 22 26 L12 22 L8 28 L2 22 L-4 28 L-10 22 L-20 26 Q-22 -6 -14 -22Z" fill="${GC}" ${o()}/>
+  <path d="M10 -24 Q22 -6 20 24 L12 22 Q16 0 8 -20Z" fill="${GC2}" opacity=".55"/>
+  <path d="M-12 -24 Q-6 -36 6 -34 Q16 -32 16 -22 Q2 -28 -12 -24Z" fill="${GC2}" ${o(2)}/>
+  <path d="M-2 -10 V18" stroke="${GC2}" stroke-width="2"/><circle cx="1" cy="-4" r="1.6" fill="#e8c06a"/><circle cx="1" cy="6" r="1.6" fill="#e8c06a"/>
+  ${limb('M-12 -16 Q-22 2 -14 14',GC,8)}<g transform="translate(-13 18) rotate(170)"><path d="M0 0 L0 -12" stroke="${K}" stroke-width="5.5" stroke-linecap="round"/><path d="M0 0 L0 -12" stroke="${GL}" stroke-width="3" stroke-linecap="round"/><circle r="4.6" fill="${GL}" ${o(1.8)}/></g>
+  ${limb('M12 -16 Q22 -14 24 -24',GC,8)}<g transform="translate(25 -28)"><circle r="4.4" fill="${GL}" ${o(1.8)}/><path d="M1 -3 L3 -10" stroke="${K}" stroke-width="5" stroke-linecap="round"/><path d="M1 -3 L3 -10" stroke="${GL}" stroke-width="2.6" stroke-linecap="round"/></g>
+  <g transform="translate(4 -18) rotate(12)">${gHead()}</g></g>${st?star(30,-46):''}</g>`};
+
+/* ---------- FRANKENSTEIN'S MONSTER (forest) ---------- */
+const FG='#8fd04e', FG2='#62a034', FJ='#7484b4', FJ2='#56648f', FP='#4a4d5a', FB='#8f5e36';
+const fHead=()=>`<rect x="-15" y="-34" width="30" height="34" rx="4" fill="${FG}" ${o()}/>
+ <path d="M10 -30 V-4" stroke="${FG2}" stroke-width="4"/>
+ <path d="M-17 -24 L-17 -37 L17 -37 L17 -24 L12 -27 L8 -24 L3 -27 L-2 -24 L-7 -27 L-12 -24Z" fill="#1b1922" ${o(2)}/>
+ <rect x="-21" y="-14" width="5" height="6" rx="1" fill="#b9bcc8" ${o(1.6)}/><rect x="16" y="-14" width="5" height="6" rx="1" fill="#b9bcc8" ${o(1.6)}/>
+ <path d="M-4 -24 h10 M-2 -26 v4 M1 -26 v4 M4 -26 v4" stroke="${K}" stroke-width="1.3"/>
+ <path d="M-11 -17 Q-7 -20 -3 -17 M3 -17 Q7 -20 11 -17" stroke="${K}" stroke-width="2.6" fill="none"/>
+ <path d="M-11 -15 Q-7 -12 -3 -15 M3 -15 Q7 -12 11 -15" stroke="${K}" stroke-width="1.8" fill="none"/>
+ <path d="M-1 -14 L-3 -8 L2 -8" stroke="${K}" stroke-width="1.6" fill="none"/>
+ <path d="M-8 -5 Q0 0 8 -5" stroke="${K}" stroke-width="2.2" fill="none"/>`;
+const frank={name:"a big, stompy Frankenstein", say:"Grumble, boogie!",
+ peek:()=>`<g class="pk"><rect x="-28" y="-40" width="40" height="82" rx="12" fill="#4a3020" ${o(2)}/><path d="M-20 -30 q6 10 0 22 M-8 6 q-6 10 0 20" stroke="#2c1d14" stroke-width="3" fill="none"/><g transform="translate(12 4) rotate(10)">${fHead()}</g>${hand(10,14,70,FG,1.15)}</g>`,
+ found:(st)=>`<g class="fd"><g transform="scale(.93) translate(0 4)">
+  <ellipse cx="0" cy="34" rx="30" ry="4.5" fill="#000" opacity=".25"/>
+  ${limb('M-8 8 L-12 26',FP,10)}${limb('M8 8 Q20 12 18 22',FP,10)}
+  <path d="M-24 34 Q-24 24 -12 24 L-4 26 L-3 34Z" fill="${FB}" ${o(2)}/><path d="M10 30 Q10 20 22 20 L30 22 L30 30Z" fill="${FB}" ${o(2)}/>
+  <path d="M-16 27 l3 3 M-12 26 l3 3 M14 23 l3 3 M18 22 l3 3" stroke="${K}" stroke-width="1.2"/>
+  <path d="M-18 -26 L18 -26 L20 12 L-20 12Z" fill="${FJ}" ${o()}/>
+  <path d="M8 -26 L20 12 L10 12Z" fill="${FJ2}" opacity=".6"/>
+  <path d="M0 -24 V12" stroke="${K}" stroke-width="1.6"/>${[-18,-10,-2,6].map(y=>`<circle cx="3" cy="${y}" r="1.5" fill="${K}"/>`).join('')}
+  <path d="M-8 -26 L0 -18 L8 -26" fill="#3a3f55" ${o(1.6)}/>
+  <path d="M-20 12 l4 -3 l3 3 l4 -3 l3 3 M6 12 l4 -3 l3 3 l4 -3 l3 3" stroke="${K}" stroke-width="1.4" fill="none"/>
+  ${limb('M-16 -22 Q-30 -30 -30 -48',FJ,10)}${hand(-30,-52,-10,FG,1.5)}
+  ${limb('M16 -22 Q30 -30 32 -46',FJ,10)}${hand(32,-50,12,FG,1.5)}
+  <g transform="translate(0 -24)">${fHead()}</g></g>${st?star(30,-52):''}</g>`};
+
+/* ---------- GHOSTS: the old couple (graveyard) ---------- */
+const GW='#eef6ff', GB='#9fd2ff', GL2='#6f8fb8';
+const glow=(d)=>`<path d="${d}" fill="${GB}" opacity=".45" stroke="${GB}" stroke-width="7" stroke-linejoin="round" filter="url(#fGlow)"/><path d="${d}" fill="${GW}" stroke="${GL2}" stroke-width="1.8" stroke-linejoin="round"/>`;
+const manHead=(x,y)=>`<g transform="translate(${x} ${y})">${glow('M-9 0 Q-10 -18 0 -19 Q10 -18 9 0 Q8 9 0 9 Q-8 9 -9 0Z')}
+ <path d="M-9 -8 Q-8 -20 2 -20 Q10 -19 9 -8 Q4 -16 -9 -8Z" fill="#dfe8f6" stroke="${GL2}" stroke-width="1.4"/><path d="M-6 -13 Q0 -16 6 -13 M-6 -10 Q0 -13 7 -10" stroke="${GL2}" stroke-width="1" fill="none"/>
+ <path d="M-6 -3 q2.5 2 5 0 M1 -3 q2.5 2 5 0" stroke="${GL2}" stroke-width="1.6" fill="none"/><path d="M-4 3 Q0 6 4 3" stroke="${GL2}" stroke-width="1.6" fill="none"/></g>`;
+const ladyHead=(x,y)=>`<g transform="translate(${x} ${y})"><path d="M-11 -6 Q-14 10 -10 16 M11 -6 Q14 10 10 16" stroke="${GL2}" stroke-width="5" fill="none" opacity=".35"/>${glow('M-9 0 Q-10 -18 0 -19 Q10 -18 9 0 Q8 9 0 9 Q-8 9 -9 0Z')}
+ <path d="M-11 4 Q-13 -16 0 -18 Q13 -16 11 4 Q8 -10 0 -12 Q-8 -10 -11 4Z" fill="#e4ecfa" stroke="${GL2}" stroke-width="1.4"/>
+ <ellipse cx="0" cy="-17" rx="15" ry="4" fill="#f4f8ff" stroke="${GL2}" stroke-width="1.4"/><path d="M-8 -18 Q0 -28 8 -18Z" fill="#f4f8ff" stroke="${GL2}" stroke-width="1.4"/>
+ <circle cx="6" cy="-21" r="2.4" fill="#f6d6ea" stroke="${GL2}" stroke-width=".8"/><circle cx="10" cy="-19" r="2" fill="#e2d8fa" stroke="${GL2}" stroke-width=".8"/>
+ <path d="M-6 -3 q2.5 2 5 0 M1 -3 q2.5 2 5 0" stroke="${GL2}" stroke-width="1.6" fill="none"/><path d="M-4 3 Q0 6 4 3" stroke="${GL2}" stroke-width="1.6" fill="none"/><circle cx="-5" cy="1" r="1.6" fill="#f6c6dc" opacity=".8"/><circle cx="5" cy="1" r="1.6" fill="#f6c6dc" opacity=".8"/></g>`;
+const skullStone=(x,y,s=1)=>`<g transform="translate(${x} ${y}) scale(${s})"><path d="M-20 26 L-20 -10 Q-20 -30 0 -30 Q20 -30 20 -10 L20 26Z" fill="#7d8fb8" stroke="#4a5a84" stroke-width="3"/><path d="M-8 -12 Q-8 -22 0 -22 Q8 -22 8 -12 Q8 -6 4 -5 L4 -1 L-4 -1 L-4 -5 Q-8 -6 -8 -12Z" fill="#9aaad0" stroke="#4a5a84" stroke-width="1.6"/><circle cx="-3.5" cy="-13" r="2" fill="#4a5a84"/><circle cx="3.5" cy="-13" r="2" fill="#4a5a84"/><path d="M-12 6 h24 M-12 12 h24" stroke="#4a5a84" stroke-width="2"/></g>`;
+const ghosts={name:"two giggly ghosts", say:"Ooo-hoo-hoo!",
+ peek:()=>`<g class="pk">${skullStone(-6,4,1)}${manHead(14,-22)}${ladyHead(28,-14)}</g>`,
+ found:(st)=>`<g class="fd"><g><g class="floaty">
+  ${glow('M-26 -14 Q-30 -34 -10 -34 Q10 -36 24 -28 Q32 -10 28 10 Q22 28 2 30 Q-20 30 -24 12 Q-26 -2 -26 -14Z')}
+  <path d="M14 22 Q30 26 32 12 Q34 2 26 4 Q20 6 24 12" stroke="${GB}" stroke-width="6" fill="none" stroke-linecap="round" opacity=".5" filter="url(#fGlow)"/><path d="M14 22 Q30 26 32 12 Q34 2 26 4 Q20 6 24 12" stroke="${GW}" stroke-width="3.2" fill="none" stroke-linecap="round"/>
+  <path d="M-8 -30 v14" stroke="${GL2}" stroke-width="1.6"/><path d="M-9 -24 l1 -3 l1 3 l-1 6Z" fill="#dfe8f6" stroke="${GL2}" stroke-width="1"/>
+  ${[-4,0,4,8,12,16].map((x,i)=>`<circle cx="${x+6}" cy="${-27+Math.abs(i-2.5)*.8}" r="1.5" fill="#fff" stroke="${GL2}" stroke-width=".7"/>`).join('')}
+  ${glow('M-34 -19 Q-20 -22 -8 -20 Q8 -20 18 -18 L18 -12 Q0 -12 -8 -13 Q-20 -12 -34 -12Z')}
+  <g transform="translate(-37 -15.5)"><path d="M0 -4 l-6 -3 M0 -1.5 l-7 0 M0 1.5 l-7 1.5 M0 4 l-5 3.5" stroke="${GL2}" stroke-width="3.4" stroke-linecap="round"/><path d="M0 -4 l-6 -3 M0 -1.5 l-7 0 M0 1.5 l-7 1.5 M0 4 l-5 3.5" stroke="${GW}" stroke-width="2" stroke-linecap="round"/><circle r="5" fill="${GW}" stroke="${GL2}" stroke-width="1.6"/></g>
+  ${manHead(-9,-40)}${ladyHead(9,-38)}
+ </g></g>${st?star(30,-56):''}</g>`};
+
+/* ---------- MUMMY in the gold mirror (haunted house) ---------- */
+const MW='#b9aed2', MW2='#8d81aa', MT='#5fb8a6';
+const mHead=()=>`<path d="M-15 -4 Q-17 -30 0 -32 Q17 -30 15 -4 Q12 6 0 6 Q-12 6 -15 -4Z" fill="${MW}" ${o()}/>
+ <path d="M-15 -22 Q0 -26 15 -22 M-16 -8 Q0 -12 16 -8 M-15 -1 Q0 -5 14 -1 M-12 -28 Q0 -31 12 -28" stroke="${MW2}" stroke-width="1.6" fill="none"/>
+ <path d="M-14 -20 Q0 -23 14 -20 L14 -10 Q0 -12 -14 -10Z" fill="${MT}" ${o(1.8)}/>
+ <circle cx="-6" cy="-15" r="4.6" fill="#eaf7f3" ${o(1.8)}/><circle cx="6" cy="-15" r="4.6" fill="#eaf7f3" ${o(1.8)}/>
+ <g><g class="blink"><circle cx="-5.4" cy="-14.6" r="1.8" fill="${K}"/><circle cx="6.6" cy="-14.6" r="1.8" fill="${K}"/></g></g>
+ <path d="M-12 -21 Q-6 -24 -1 -21 M1 -21 Q6 -24 12 -21" stroke="${K}" stroke-width="2.6" fill="none"/>
+ <ellipse cx="0" cy="-8.5" rx="3.4" ry="3" fill="${MT}" ${o(1.6)}/>
+ <path d="M-8 -3 Q0 3 8 -3 L7 0 Q0 4 -7 0Z" fill="#fffbe8" ${o(1.6)}/><path d="M-3 -2 v3.5 M1 -1.6 v4 M5 -2.4 v3" stroke="${K}" stroke-width="1"/>`;
+const mummy={name:"a peek-a-boo mummy", say:"Peek-a-boo!",
+ peek:()=>`<g class="pk"><ellipse cx="0" cy="0" rx="22" ry="29" fill="#6a1f2a" ${o(2)}/>
+  <path d="M-12 -18 l3 3 l-3 3 l-3 -3Z M10 -10 l3 3 l-3 3 l-3 -3Z M-6 8 l3 3 l-3 3 l-3 -3Z" fill="#8a3040"/>
+  <g transform="translate(4 20) scale(.8)"><path d="M-18 6 Q-20 -6 -14 -8 L14 -8 Q20 -6 18 6Z" fill="${MW}" ${o(2)}/>${mHead()}</g>
+  <path d="M-14 22 Q-10 12 -4 18 Q2 26 10 22" fill="none" stroke="${MW}" stroke-width="5" stroke-linecap="round"/>
+  <ellipse cx="0" cy="0" rx="22" ry="29" fill="none" stroke="${K}" stroke-width="7"/><ellipse cx="0" cy="0" rx="22" ry="29" fill="none" stroke="#f0c43a" stroke-width="4.4"/>
+  <path d="M-6 30 h12 l-3 6 h-6Z" fill="#f0c43a" ${o(1.6)}/><path d="M0 -32 l3 4 h-6Z" fill="#f0c43a" ${o(1.4)}/></g>`,
+ found:(st)=>`<g class="fd"><g transform="scale(1) translate(0 2)">
+  <ellipse cx="0" cy="34" rx="26" ry="4" fill="#000" opacity=".25"/>
+  <path d="M-10 -40 Q-26 -34 -24 -16 Q-22 -2 -30 8 L-26 10 L-30 14" stroke="${K}" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M-10 -40 Q-26 -34 -24 -16 Q-22 -2 -30 8 L-26 10 L-30 14" stroke="${MW}" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  ${limb('M-6 8 L-9 30',MW,9)}${limb('M7 8 L10 30',MW,9)}<path d="M-13 18 h9 M-13 24 h8 M5 18 h9 M6 24 h8" stroke="${MW2}" stroke-width="1.4"/>
+  <path d="M-15 -24 Q0 -30 15 -24 L14 12 Q0 16 -14 12Z" fill="${MW}" ${o()}/>
+  <path d="M-15 -16 Q0 -20 15 -16 M-15 -8 Q0 -4 15 -10 M-14 0 Q0 -4 14 2 M-14 7 Q0 10 14 5" stroke="${MW2}" stroke-width="1.6" fill="none"/>
+  <path d="M8 -6 Q14 -2 10 4" stroke="${MT}" stroke-width="3" fill="none"/>
+  ${limb('M-12 -20 Q8 -22 26 -18',MW,8)}${hand(29,-18,95,MT,1.1)}
+  ${limb('M12 -14 Q24 -10 32 -8',MW,8)}${hand(35,-8,100,MT,1.1)}
+  <path d="M6 -22 v6 M14 -21 v6 M20 -13 v6" stroke="${MW2}" stroke-width="1.4"/>
+  <g transform="translate(0 -24)">${mHead()}</g></g>${st?star(28,-50):''}</g>`};
+
+return {pumpkin:zombie, swamp, tunnel:goblin, forest:frank, graveyard:ghosts, house:mummy};
+})();
 // A tappable obstacle piece (vine, bubble, bat, footprint, fog). Hit circle r=48 (≈ 90px+ on a phone).
 const tg=(x,y,inner,label,delay=0)=>`<g transform="translate(${x} ${y})"><g class="tgt" data-act="tgt" role="button" tabindex="0" aria-label="${label}"><circle r="48" fill="transparent"/><g class="idle" style="animation-delay:${delay}s">${inner}</g></g></g>`;
 const spots=[[85,215],[200,182],[315,218],[135,288],[265,290]];
 
 /* ---------- Scene art ---------- */
+/* =====================================================================
+   HOME-PEEK v2 — the family heads peeking over the blanket in ART.home().
+   Drop-in: in ART.home(step), replace the five `peek=`/`peek+=` lines with
+       let peek=homePeek(eyes);
+   (eyes is the local helper already defined at the top of ART.home).
+   Same x positions as v1: dad 95, witch 150, cat girl 200, werewolf 250, dino-dog 305.
+   ===================================================================== */
+function homePeek(eyes){
+  const K='#1b1024', SK='#f4c9a2';
+  let p=`<circle cx="95" cy="244" r="20" fill="${SK}" stroke="${K}" stroke-width="2"/><path d="M71 230 Q95 216 119 230 Q112 206 95 204 Q78 206 71 230Z" fill="#1d1a22" stroke="${K}" stroke-width="2"/><circle cx="95" cy="214" r="3.4" fill="#fff"/><path d="M76 236 L114 244" stroke="${K}" stroke-width="2"/>`+eyes(95,238);
+  p+=`<path d="M136 236 Q132 256 138 262 M164 236 Q168 256 162 262" stroke="#e8742a" stroke-width="7" fill="none" stroke-linecap="round"/><circle cx="150" cy="246" r="17" fill="${SK}" stroke="${K}" stroke-width="2"/><ellipse cx="150" cy="232" rx="24" ry="5" fill="#3a2a52" stroke="${K}" stroke-width="1.6"/><path d="M137 232 L163 232 L156 210 Q152 200 146 200 L148 210Z" fill="#3a2a52" stroke="${K}" stroke-width="1.6"/>`+eyes(150,240);
+  p+=`<circle cx="200" cy="245" r="17" fill="${SK}" stroke="${K}" stroke-width="2"/><path d="M183 240 L182 220 L193 230 M217 240 L218 220 L207 230" fill="#8fdc4a" stroke="${K}" stroke-width="1.8"/><path d="M183 236 Q200 230 217 236 L216 246 L184 246Z" fill="#8fdc4a" stroke="${K}" stroke-width="1.8"/>`+eyes(200,241);
+  p+=`<path d="M230 252 Q228 224 236 220 L235 230 Q250 222 265 230 L264 220 Q272 224 270 252Z" fill="#b8562e" stroke="${K}" stroke-width="2"/><circle cx="250" cy="248" r="13" fill="${SK}" stroke="${K}" stroke-width="1.8"/>`+eyes(250,246);
+  p+=`<circle cx="305" cy="248" r="15" fill="#f4f4f0" stroke="${K}" stroke-width="2"/><path d="M290 244 Q292 230 305 230 Q318 230 320 244 Q312 238 305 238 Q298 238 290 244Z" fill="#4caf50" stroke="${K}" stroke-width="1.6"/><path d="M296 233 l2 -6 l3 5 l4 -6 l3 6 l3 -5 l2 6" fill="#f2c230" stroke="${K}" stroke-width="1"/>`+eyes(305,246);
+  return p;
+}
+
 const ART={
 title(){
   return SKY()+stars()+moon(330,70,34)+flyingBat(205,0)+flyingBat(240,3.5,.55)+
@@ -600,8 +1077,8 @@ goonScene(st){
   if(st<4){
     const shade=[.95,.74,.52,.3][st], hl=['','bumps','ears','eyes'][st];
     s+=`<defs><clipPath id="dclip"><rect x="105" y="70" width="190" height="270" rx="6"/></clipPath></defs>
-      <g clip-path="url(#dclip)"><g transform="translate(200 255)">${goon({hl})}</g><rect x="100" y="60" width="200" height="290" fill="#07020c" opacity="${shade}"/></g>`;
-    if(st===0) s+=`<g transform="translate(200 193)"><g class="blink"><circle cx="-15" r="5" fill="#b8ff7a" filter="url(#fGlow)"/><circle cx="15" r="5" fill="#b8ff7a" filter="url(#fGlow)"/></g></g>`;
+      <g clip-path="url(#dclip)"><g transform="translate(200 262) scale(.88)">${goon({hl})}</g><rect x="100" y="60" width="200" height="290" fill="#07020c" opacity="${shade}"/></g>`;
+    if(st===0) s+=`<g transform="translate(200 189)"><g class="blink"><circle cx="-19" r="5" fill="#b8ff7a" filter="url(#fGlow)"/><circle cx="19" r="5" fill="#b8ff7a" filter="url(#fGlow)"/></g></g>`;
     s+=`<rect data-act="peek" role="button" aria-label="peek into the doorway" x="105" y="70" width="190" height="270" fill="transparent"/>`+famG({lvl:2},0,.55);
   } else {
     s+=`<g transform="translate(200 236) scale(1.2)"><g class="booPop"><g class="partydance">${goon()}</g></g></g>`+famG({lvl:2},0,.55)+
@@ -612,11 +1089,7 @@ goonScene(st){
 },
 home(step){
   const eyes=(x,y,c='#fff',p='#222')=>`<g transform="translate(${x} ${y})"><g class="blink"><circle cx="-6" r="5" fill="${c}"/><circle cx="6" r="5" fill="${c}"/><circle cx="-5" cy="1" r="2.4" fill="${p}"/><circle cx="7" cy="1" r="2.4" fill="${p}"/></g></g>`;
-  let peek=`<circle cx="95" cy="244" r="20" fill="#f2c39b"/><ellipse cx="95" cy="226" rx="28" ry="5" fill="#8a5a2b"/><rect x="78" y="206" width="34" height="20" rx="8" fill="#a06a35"/>`+eyes(95,238);
-  peek+=`<circle cx="150" cy="246" r="17" fill="#f6cfa8"/><ellipse cx="150" cy="232" rx="24" ry="5" fill="#2a1440"/><path d="M137 232 L163 232 L156 200 L146 204Z" fill="#2a1440"/>`+eyes(150,240);
-  peek+=`<circle cx="200" cy="245" r="18" fill="#1d1d26"/><circle cx="200" cy="246" r="14" fill="#f4f4f4"/>`+eyes(200,240,'#1d1d26','#fff');
-  peek+=`<circle cx="250" cy="246" r="17" fill="#e7e0f5"/><path d="M233 244 Q234 228 250 228 Q266 228 267 244 L259 238 L250 246 L241 238Z" fill="#111"/>`+eyes(250,241);
-  peek+=`<circle cx="305" cy="248" r="15" fill="#a8692f"/><path d="M292 238 Q284 246 288 258 M318 238 Q326 246 322 258" stroke="#6b3d1e" stroke-width="8" fill="none" stroke-linecap="round"/>`+eyes(305,244);
+  let peek=homePeek(eyes);
   let s=R(-900,340,'#4a2a6e')+R(-900,340,'url(#pDots)')+R(330,1000,'#6b3f2a')+
    `<path d="M-700 360 H1100 M-700 395 H1100 M-700 430 H1100" stroke="#5a3322" stroke-width="3"/>
     <rect x="34" y="40" width="100" height="110" rx="6" fill="#1b0933" stroke="#7a4a2a" stroke-width="8"/>${moon(100,76,15)}<path d="M84 40 V150 M34 95 H134" stroke="#7a4a2a" stroke-width="6"/>
@@ -659,7 +1132,7 @@ function monsterG(o){
    ===================================================================== */
 const $=s=>document.querySelector(s);
 const stage=$('#stage'), sceneEl=$('#scene'), svg=$('#svg'), textEl=$('#text'), actEl=$('#actions');
-const S={scene:'title',ob:0,phase:'',prog:0,found:new Set(),gstep:0,run:0,hstep:0,busy:false,say:''};
+const S={scene:'title',ob:0,phase:'',prog:0,found:new Set(),gstep:0,run:0,hstep:0,busy:false,say:'',replay:null};
 const timers=[]; const later=(fn,ms)=>{ timers.push(setTimeout(fn,ms)); };
 const clearTimers=()=>{ timers.forEach(clearTimeout); timers.length=0; };
 function setText(html,say){ textEl.innerHTML=html+'<span class="spk" aria-hidden="true">🔊</span>'; S.say=say||textEl.textContent; }
@@ -674,44 +1147,64 @@ function pop(text,e){
 }
 function updateTally(bump){ $('#tally b').textContent=S.found.size; if(bump) restartAnim($('#tally'),'bump'); }
 function go(scene,opts={}){
-  if(S.busy) return; S.busy=true; clearTimers(); Snd.stopParty(); Voice.stop();
+  if(S.busy) return; S.busy=true; clearTimers(); Snd.stopParty(); VO.stop();
   stage.classList.add('fading');
   setTimeout(()=>{
     Object.assign(S,{scene,phase:''},opts);
-    sceneEl.querySelectorAll('.pop').forEach(p=>p.remove()); sceneEl.classList.remove('quake');
+    sceneEl.querySelectorAll('.pop,.echo-pop').forEach(p=>p.remove()); sceneEl.classList.remove('quake');
     try{ render(); }catch(err){ console.error(err); }
     stage.classList.remove('fading'); S.busy=false;
   },230);
 }
 function render(){ ({title:rTitle,chant:rChant,obstacle:rObstacle,goon:rGoon,run:rRun,home:rHome,party:rParty})[S.scene](); }
 
+const lineTxt=id=>(VO_LINES[id]||[''])[0];
+function echoPop(id){ // the echo kid's reply appears as a pink speech bubble
+  const d=document.createElement('div'); d.className='echo-pop'; d.textContent=lineTxt(id);
+  sceneEl.appendChild(d); setTimeout(()=>d.remove(),1900);
+}
+function play(items){ S.replay=items; VO.seq(items); }
+
 function rTitle(){
+  VO.bedTo(null);
   svg.innerHTML=ART.title();
   setText('<p class="big">A spooky tap-along story!</p><p class="small">Listen, tap, and find the hiding monsters.</p>',"We're going on a goon hunt! A spooky tap-along story. Listen, tap, and find the hiding monsters!");
   setActions('<button class="btn pulse" data-act="start">Start the Hunt! 🎃</button>');
+  const items=[{id:'title_01'}]; S.replay=items;
+  if(VO.ctx&&VO.ctx.state==='running') VO.seq(items); // after "Hunt Again"; first visit waits for a tap
 }
 function rChant(){
   const o=OBST[S.ob];
+  VO.bedTo('march');
   svg.innerHTML=ART.trail(S.ob)+famG({lvl:fear(S.ob)},0,.78);
   const lines=[...CHANT,o.scared];
-  const html=lines.map((l,li)=>l.split(' ').map(w=>`<span class="w${li===3?' sc':''}">${w}</span>`).join(' ')).join('<br>');
+  const html=lines.map((l,li)=>'<span class="ln">'+l.split(' ').map(w=>`<span class="w${li===3?' sc':''}">${w}</span>`).join(' ')+'</span>').join('<br>');
   setText(`<p class="chant">${html}</p>`,lines.join(' '));
   setActions(`<button class="btn green" data-act="notscared">${o.btn}</button>`);
-  Voice.say(S.say,{rate:.9});
-  const ws=[...textEl.querySelectorAll('.w')]; let k=0;
-  const tick=()=>{
-    ws.forEach(w=>w.classList.remove('now'));
-    if(k<ws.length){ ws[k].classList.add('lit','now'); P(k%4===0?'drumHi':'drum'); k++; later(tick,390); }
-    else { const b=actEl.querySelector('.btn'); b&&b.classList.add('pulse'); }
+  const ln=[...textEl.querySelectorAll('.ln')];
+  const light=(k,d)=>{ // words light up in time with the leader's line
+    const ws=[...ln[k].querySelectorAll('.w')];
+    ws.forEach((w,i)=>later(()=>{ textEl.querySelectorAll('.w.now').forEach(x=>x.classList.remove('now')); w.classList.add('lit','now'); if(!VO.bed) P(i===0?'drumHi':'drum'); },i*d*850/ws.length));
+    later(()=>ws.forEach(w=>w.classList.remove('now')),d*1000);
   };
-  later(tick,250);
+  const L=['chant_L1','chant_L2','chant_L3','scared_L_'+o.id], E=['chant_E1','chant_E2','chant_E3'];
+  const items=[];
+  L.forEach((id,k)=>{
+    items.push({id,q:'bar',delay:k?0:.3,on:(t,d)=>light(k,d)});
+    if(E[k]) items.push({id:E[k],q:'bar',on:()=>echoPop(E[k])});
+  });
+  const last=items[items.length-1];
+  last.on=(t,d)=>{ light(3,d); later(()=>{ const b=actEl.querySelector('.btn'); b&&b.classList.add('pulse'); },d*1000); };
+  play(items); // the kid's tap on the button is the echo for the last line
 }
 function rObstacle(){
   const o=OBST[S.ob], A=ART[o.id]();
+  VO.bedTo('march');
   svg.innerHTML=`<g>${A.bg}</g><g id="tgts" class="locked">${A.targets}</g>${monsterG(o)}${famG({lvl:fear(S.ob)},-70,.72)}${A.front||''}`;
   setText(`<p class="big">${o.intro}</p><p class="small">We can't go over it. We can't go under it.</p>`, `${o.intro} We can't go over it. We can't go under it.`);
   setActions(`<button class="btn sm" data-act="over"><span class="e">⬆️</span>Over?</button><button class="btn sm" data-act="under"><span class="e">⬇️</span>Under?</button><button class="btn sm green pulse" data-act="through"><span class="e">➡️</span>Through!</button>`);
-  P('sting'); Voice.say(S.say);
+  P('sting');
+  play([{id:'intro_'+o.id,delay:.35},{id:'over_L',q:'bar'},{id:'over_E',q:'bar',on:()=>echoPop('over_E')},{id:'under_L',q:'bar'},{id:'under_E',q:'bar',on:()=>echoPop('under_E')}]);
   later(()=>{ const m=svg.querySelector('.mon.peek'); m&&m.classList.add('hint'); },12000);
 }
 function startThrough(){
@@ -719,7 +1212,7 @@ function startThrough(){
   const t=$('#tgts'); t&&t.classList.remove('locked');
   setText(`<p class="big">Oh no! We've got to go THROUGH it!</p>`,"Oh no! We've got to go through it! "+o.hint);
   setActions(`<div class="prog"><div class="hint">👆 ${o.hint}</div><div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="${o.n}" aria-valuenow="0"><div class="fill" id="fill"></div></div></div>`);
-  P('drumHi'); Voice.say(S.say);
+  P('drumHi'); play([{id:'through_01'},{id:'hint_'+o.id,q:'beat'}]);
 }
 function moveFam(dx){ const m=svg.querySelector('.fam-move'); if(m) m.style.transform=`translateX(${dx}px)`; }
 function famAct(cls){ restartAnim(svg.querySelector('.fam-act'),cls); }
@@ -728,7 +1221,7 @@ function hitTarget(el,e){
   const o=OBST[S.ob];
   if(o.id==='house'){ S.prog++; const d=$('#door'); d&&d.setAttribute('class','door open'+Math.min(S.prog,3)); restartAnim(el,'whack'); if(S.prog>=o.n) el.removeAttribute('data-act'); }
   else { el.removeAttribute('data-act'); el.classList.add(o.gone); S.prog++; }
-  P(o.snd); pop(o.word,e); Voice.say(o.word,{rate:1.05});
+  P(o.snd); pop(o.word,e); VO.shout('word_'+o.id);
   moveFam(-70+140*S.prog/o.n);
   const f=$('#fill'); if(f){ f.style.width=(100*S.prog/o.n)+'%'; f.parentNode.setAttribute('aria-valuenow',S.prog); }
   if(S.prog>=o.n){ S.phase='done'; later(o.id==='house'?doorDone:throughDone,700); }
@@ -738,14 +1231,18 @@ function throughDone(){
   const missed=!S.found.has(o.id);
   setText(`<p class="big">Hooray! We made it through! 🎉</p>${missed?'<p class="small">Psst… someone is hiding here! 👀</p>':''}`, "Hooray! We made it through!"+(missed?" Psst... someone is hiding here!":""));
   setActions(`<button class="btn green pulse" data-act="next">Keep hunting! ➜</button>`);
-  Voice.say(S.say);
+  const items=[{id:'done_01'},{id:'done_E',q:'beat',on:()=>echoPop('done_E')}];
+  if(missed) items.push({id:'psst_hiding',q:'bar'});
+  play(items);
   if(missed){ const m=svg.querySelector('.mon.peek'); m&&m.classList.add('hint'); }
 }
 function doorDone(){
   const missed=!S.found.has('house');
   setText(`<p class="big">The door creaks open… 👀</p>${missed?'<p class="small">Psst… peek in the window first!</p>':''}`,'The door creaks open...'+(missed?' Psst... peek in the window first!':''));
   setActions(`<button class="btn pink pulse" data-act="enter">Who’s in there? 👀</button>`);
-  P('heartbeat'); later(()=>P('heartbeat'),700); Voice.say(S.say);
+  P('heartbeat'); later(()=>P('heartbeat'),700);
+  const items=[{id:'door_01'}]; if(missed) items.push({id:'psst_window',q:'bar'});
+  play(items);
   if(missed){ const m=svg.querySelector('.mon.peek'); m&&m.classList.add('hint'); }
 }
 function findMonster(el,e){
@@ -755,60 +1252,71 @@ function findMonster(el,e){
     el.setAttribute('aria-label',MON[id].name);
     el.innerHTML=`<circle r="44" fill="transparent"/>${MON[id].found(true)}`;
     P('pop'); later(()=>P('giggle'),120); pop(MON[id].say,e); updateTally(true);
-    Voice.say(`You found ${MON[id].name}! ${MON[id].say}`);
+    VO.seq([{id:'found_'+id}]);
   } else { P('giggle'); pop(MON[id].say,e); restartAnim(el,'again'); }
 }
-const GOON_TXT=["What's that? Something is in the dark…","A bumpy, bald head!","Big, green ears!","Little, beady eyes!","IT'S A GOON!!!"];
+const GOON_TXT=["What's that? Something is in the dark…","A bumpy, bald head!","Big, green ears!","Little, beady eyes!","IT'S A GOON! BOO!"];
 function rGoon(){
   const st=S.gstep;
   svg.innerHTML=ART.goonScene(st);
   if(st<4){
+    VO.bedTo('suspense');
     setText(`<p class="big">${GOON_TXT[st]}</p>`,GOON_TXT[st]);
     setActions('<button class="btn pulse" data-act="peek">Peek! 👀</button>');
     P(st===0?'heartbeat':'sting');
+    const n=st+1;
+    play(st===0?[{id:'goon_01',q:'bar'}]:[{id:`goon_0${n}`,q:'bar'},{id:`goon_0${n}E`,q:'bar',on:()=>echoPop(`goon_0${n}E`)}]);
   } else {
-    setText(`<p class="big">${GOON_TXT[4]}</p><p class="small">Everybody RUN! …but the littlest unicorn cheers, “Hooray, a monster!”</p>`,"It's a GOON! Boo! Everybody run! But the littlest unicorn cheers: Hooray, a monster!");
+    VO.bedTo(null,.05); // the music cuts out at the reveal
+    setText(`<p class="big">${GOON_TXT[4]}</p><p class="small">Everybody run! …but the littlest unicorn cheers, “Hooray, a monster!”</p>`,"It's a GOON! Boo! Everybody run! But the littlest unicorn cheers: Hooray, a monster!");
     setActions('<button class="btn pink pulse" data-act="run">RUN!!! 💨</button>');
     P('boo'); later(()=>P('scream'),500); restartAnim(sceneEl,'quake');
+    play([{id:'goon_05',delay:.15},{id:'goon_05E',on:()=>echoPop('goon_05E')},{id:'goon_06',delay:.2}]);
   }
-  Voice.say(S.say);
 }
 function rRun(){
   const id=RUNS[S.run], o=OBST.find(x=>x.id===id), s=.72;
+  VO.bedTo('escape');
   const runners=`<g transform="translate(${(200+124*s).toFixed(1)} 428) scale(${-s} ${s})"><g class="runbob">${family({lvl:2,noUni:true})}</g></g>`;
   const lines=[300,340,380].map((y,i)=>`<g class="zoom" style="animation-delay:${i*-.13}s"><path d="M${300+i*10} ${y} h40" stroke="#fff" stroke-width="4" stroke-linecap="round" opacity=".7"/></g>`).join('');
   const chaser=`<g transform="translate(350 236) scale(.3)">${goon()}</g><g transform="translate(300 160)"><rect x="-62" y="-22" width="124" height="34" rx="14" fill="#fff"/><path d="M30 12 l14 14 l-2 -14Z" fill="#fff"/><text y="1" text-anchor="middle" font-size="15" font-weight="bold" fill="#2a1046">Wait! Let's play!</text></g>`;
   svg.innerHTML=`<g>${ART[id]().bg}</g>${chaser}${runners}${lines}`;
-  setText(`<p class="big">Back through the ${o.short}!</p><p class="sw">${o.word} ${o.word}</p>`,`Back through the ${o.short}! ${o.word} ${o.word}`);
+  setText(`<p class="big">Back through the ${o.short}!</p><p class="sw">${o.word} ${o.word} ${o.word}</p>`,`Back through the ${o.short}! ${o.word} ${o.word} ${o.word}`);
   setActions(`<button class="btn pink pulse" data-act="run">RUN! 💨</button>`);
-  P('whoosh'); later(()=>P(o.snd),250); later(()=>P(o.snd),850);
-  Voice.say(S.say,{rate:1.1});
+  P('whoosh');
+  const items=[{id:'run_'+id,q:'beat'}];
+  for(let i=0;i<3;i++) items.push({id:'word_'+id,q:'beat',rate:1.12,on:()=>P(o.snd)}); // rushed, double-time
+  if(S.run%2===0) items.push({id:'goon_wait',q:'beat'});
+  play(items);
 }
 function rHome(){
   svg.innerHTML=ART.home(S.hstep);
   if(S.hstep===0){
+    VO.bedTo(null,.4);
     setText('<p class="big">Home! Up the stairs! Under the covers!</p><p class="small">Phew… safe and snug.</p>','Home! Up the stairs! Under the covers! Phew... safe and snug.');
     setActions('<button class="btn green pulse" data-act="home2">Phew! 😅</button>');
     P('slam'); later(()=>P('steps'),350);
+    play([{id:'home_01',delay:.5,on:(t,d)=>later(()=>P('wahwah'),d*1000+150)}]);
   } else {
     setText('<p class="big">Wait… someone is missing!</p><p class="small">Count the eyes. Who is it? 🤔</p>','Wait... someone is missing! Count the eyes. Who is it?');
     setActions('<button class="btn pink pulse" data-act="party">Where’s the unicorn? 🦄</button>');
-    P('sting');
+    P('sting'); play([{id:'home_02'}]);
   }
-  Voice.say(S.say);
 }
 function rParty(){
+  VO.bedTo(null);
   svg.innerHTML=ART.party(S.found);
-  const n=S.found.size;
-  setText(`<p class="big">MONSTER PARTY! 🎉</p><p class="small">The littlest unicorn stayed to dance with the Goon! You found ${n} of 6 hiding monsters. Tap them to dance!</p>`,
-    `There's the littlest unicorn! Monsters aren't scary. Monsters are fun! It's a monster party with the Goon! You found ${n} of 6 hiding monsters. Tap them to make them dance!`);
+  const cid='count_'+S.found.size;
+  const show=id=>setText(`<p class="big">MONSTER PARTY! 🎉</p><p class="small">${lineTxt(id)}</p>`,lineTxt('party_01')+' '+lineTxt(cid));
+  show('party_01');
   setActions('<button class="btn green pulse" data-act="restart">Hunt Again! 🔁</button>');
-  P('cheer'); later(()=>Snd.startParty(),600); Voice.say(S.say);
+  P('cheer'); later(()=>Snd.startParty(),600);
+  play([{id:'party_01',delay:.3,on:()=>show('party_01')},{id:cid,delay:.15,on:()=>show(cid)}]);
 }
 function dance(el,e){
   restartAnim(el,'dance'); const k=el.dataset.k;
-  if(k==='goon'){ P('laugh'); pop('Ha ha ha!',e); }
-  else if(k==='uni'){ P('giggle'); pop('Wheee!',e); }
+  if(k==='goon'){ P('laugh'); pop('Ha ha ha!',e); VO.shout('goon_laugh','now'); }
+  else if(k==='uni'){ P('giggle'); pop('Wheee!',e); VO.shout('uni_whee','now'); }
   else { P('note'); pop(['♪','♫','Woo!','Yay!','Boogie!'][Math.floor(Math.random()*5)],e); }
 }
 
@@ -816,20 +1324,21 @@ function dance(el,e){
 function act(a,el,e){
   switch(a){
     case 'snd': Snd.setOn(!Snd.on); el.classList.toggle('off',!Snd.on); el.setAttribute('aria-pressed',Snd.on); if(Snd.on){ P('pop'); if(S.scene==='party') Snd.startParty(); } else Snd.stopParty(); return;
-    case 'voice': Voice.on=!Voice.on; el.classList.toggle('off',!Voice.on); el.setAttribute('aria-pressed',Voice.on); if(!Voice.on) Voice.stop(); else Voice.say('Read aloud is on!'); return;
-    case 'read': Voice.say(S.say); return;
+    case 'voice': VO.setVoice(!VO.on); el.classList.toggle('off',!VO.on); el.setAttribute('aria-pressed',VO.on); if(VO.on) VO.seq([{id:'voice_on'}]); return;
+    case 'read': if(S.replay) VO.seq(S.replay); return;
   }
   if(S.busy) return;
   switch(a){
     case 'start': P('steps'); go('chant',{ob:0}); break;
-    case 'tgoon': P('giggle'); pop('Hee hee!',e); break;
+    case 'tgoon': P('giggle'); pop('Hee hee!',e); VO.shout('pop_hee','now'); break;
     case 'notscared': {
       if(S.phase==='shouted') break; S.phase='shouted'; clearTimers();
-      const o=OBST[S.ob]; P('cheer'); famAct('jump'); pop(o.btn,e); Voice.say(o.btn,{rate:1});
+      const o=OBST[S.ob], eid='scared_E_'+o.id; P('cheer'); famAct('jump'); pop(o.btn,e);
+      VO.seq([{id:eid}]);
       textEl.querySelectorAll('.w').forEach(w=>{ w.classList.add('lit'); w.classList.remove('now'); });
-      later(()=>go('obstacle',{prog:0}),1400); break; }
-    case 'over': P('boing'); famAct('jump'); pop("Can't go over it!",e); Voice.say("We can't go over it!"); break;
-    case 'under': P('buzz'); famAct('duck'); pop("Can't go under it!",e); Voice.say("We can't go under it!"); break;
+      later(()=>go('obstacle',{prog:0}),Math.max(1400,VO.dur(eid)*1000+450)); break; }
+    case 'over': P('boing'); famAct('jump'); echoPop('over_E'); VO.seq([{id:'over_E'}]); break;
+    case 'under': P('buzz'); famAct('duck'); echoPop('under_E'); VO.seq([{id:'under_E'}]); break;
     case 'through': startThrough(); break;
     case 'tgt': hitTarget(el,e); break;
     case 'monster': findMonster(el,e); break;
@@ -871,10 +1380,11 @@ document.addEventListener('gesturestart',e=>e.preventDefault());
 document.addEventListener('dblclick',e=>e.preventDefault());
 document.addEventListener('contextmenu',e=>e.preventDefault());
 document.addEventListener('visibilitychange',()=>{
-  if(document.hidden){ Voice.stop(); if(Snd.ctx) Snd.ctx.suspend().catch(()=>{}); }
+  if(document.hidden){ VO.stop(); if(Snd.ctx) Snd.ctx.suspend().catch(()=>{}); }
   else if(Snd.ctx) Snd.ctx.resume().catch(()=>{});
 });
 
+VO.prefetch();
 render();
 </script>
 </body>
