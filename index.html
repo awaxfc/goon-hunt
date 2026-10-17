@@ -7,6 +7,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <title>We're Going on a Goon Hunt! - a spooky tap-along story game</title>
+<link rel="icon" href="data:,">
 <!--
   We're Going on a Goon Hunt! — a tap-along story game for ages 3–6.
   Fan-made game inspired by the picture book by Michael Rex (Putnam, 2020).
@@ -172,6 +173,42 @@ button{font-family:inherit}
 @keyframes popword{0%{transform:translate(-50%,-50%) scale(.3);opacity:0}22%{transform:translate(-50%,-50%) scale(1.2);opacity:1}100%{transform:translate(-50%,-140%) scale(1);opacity:0}}
 @keyframes bump{30%{transform:scale(1.35) rotate(-6deg)}60%{transform:scale(.95)}}
 @keyframes quake{0%,100%{transform:translate(0)}20%{transform:translate(-8px,4px)}40%{transform:translate(8px,-4px)}60%{transform:translate(-6px,2px)}80%{transform:translate(6px,-2px)}}
+/* ---------- r3: navigation, confirm, prompts, Dracula, ending ---------- */
+#top .left{display:flex;gap:10px}
+.icon-btn.hide{visibility:hidden}
+@media (max-width:430px){ .icon-btn{width:54px;height:54px;font-size:26px;border-radius:17px} #tally{height:54px;padding:0 10px;font-size:21px;min-width:54px} #top{gap:6px;padding:6px 8px 4px} .tools,#top .left{gap:7px} }
+@media (max-width:350px){ .icon-btn{width:48px;height:48px;font-size:23px} #tally{font-size:18px;padding:0 8px} }
+#confirm{position:absolute;inset:0;z-index:40;background:#0d0418cc;display:flex;align-items:center;justify-content:center}
+#confirm[hidden]{display:none}
+.cbox{background:#2a1046;border:4px solid #ffe066;border-radius:32px;padding:18px 22px 22px;text-align:center;box-shadow:0 10px 40px #000a}
+.cbox.cin{animation:boopop .35s cubic-bezier(.3,1.8,.5,1)}
+.cq{font-size:56px;line-height:1.1;margin-bottom:12px}
+.crow{display:flex;gap:26px;justify-content:center}
+.cbtn{width:118px;height:118px;border-radius:50%;border:5px solid #fff;font-size:58px;cursor:pointer;display:grid;place-items:center;padding:0;touch-action:manipulation}
+.cbtn.yes{background:linear-gradient(#c8ff8a,#46c21e);box-shadow:0 7px 0 #23700c}
+.cbtn.no{background:linear-gradient(#ffb3c0,#ff4f6a);box-shadow:0 7px 0 #a0203a}
+.cbtn:active{transform:translateY(4px)}
+.saying{animation:saying .7s ease-out !important}
+@keyframes saying{0%{transform:scale(1)}35%{transform:scale(1.16) rotate(-2deg);filter:brightness(1.25)}70%{transform:scale(.97)}100%{transform:scale(1)}}
+#svg .saying{transform-box:fill-box;transform-origin:center}
+.who{font-size:clamp(15px,4vw,19px);color:#ffc8ea;margin:0 !important}
+.echo-pop.soft{color:#dfe3ff;text-shadow:0 3px 0 #2a2a6a,0 0 14px #9fb0ff}
+.btn.big2{font-size:clamp(26px,7vw,36px);padding:14px 34px}
+.bp{transform-box:fill-box;opacity:0}
+.bp1{animation:bp1 1.3s ease-out}.bp2{animation:bp2 1.3s ease-out .05s}.bp3{animation:bp3 1.3s ease-out .1s}
+@keyframes bp1{0%{opacity:1;transform:translate(0,0) scale(.4)}100%{opacity:0;transform:translate(-60px,-50px) scale(1)}}
+@keyframes bp2{0%{opacity:1;transform:translate(0,0) scale(.4)}100%{opacity:0;transform:translate(55px,-60px) scale(1)}}
+@keyframes bp3{0%{opacity:1;transform:translate(0,0) scale(.4)}100%{opacity:0;transform:translate(5px,-80px) scale(1)}}
+.flick{animation:flick 1.6s ease-in-out infinite alternate}
+@keyframes flick{0%{opacity:.75}50%{opacity:1}53%{opacity:.6}56%{opacity:1}100%{opacity:.85}}
+.hearts{opacity:0;transition:opacity .4s}.hearts.show{opacity:1}
+.bedfam.giggle{transform-box:fill-box;transform-origin:50% 100%;animation:giggle .22s ease-in-out 6 alternate}
+@keyframes giggle{from{transform:translateY(0)}to{transform:translateY(-6px)}}
+.uniHi{transform-box:fill-box;transform-origin:50% 100%}.uniHi.hop1{animation:jump .6s ease-out}
+.lightsout{animation:lightsout 2.4s ease-in forwards}
+@keyframes lightsout{from{opacity:0}to{opacity:.62}}
+/* peek steps: only the lit features show; arms/claws never lit before the reveal */
+.glit .garmL,.glit .garmR{display:none}
 @media (prefers-reduced-motion:reduce){.shake2{animation-duration:.4s}.spin{animation:none}}
 </style>
 </head>
@@ -193,8 +230,12 @@ button{font-family:inherit}
   </defs>
 </svg>
 
-<div id="stage">
+<div id="stage" class="at-title">
   <div id="top">
+    <div class="left">
+      <button class="icon-btn navb hide" id="backBtn" data-act="back" aria-label="Go back one step">⬅️</button>
+      <button class="icon-btn navb hide" id="homeBtn" data-act="home" aria-label="Start over">🏠</button>
+    </div>
     <div id="tally" role="status" aria-live="polite" title="Hidden monsters found"><span aria-hidden="true">👀</span><b>0</b>/6</div>
     <div class="tools">
       <button class="icon-btn" id="sndBtn" data-act="snd" aria-label="Music and sound effects on or off" aria-pressed="true">🎵</button>
@@ -204,6 +245,7 @@ button{font-family:inherit}
   <div id="scene"><svg id="svg" viewBox="0 0 400 440" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Story picture"></svg></div>
   <div id="text" data-act="read" role="button" aria-label="Read the words again"></div>
   <div id="actions"></div>
+  <div id="confirm" hidden role="dialog" aria-label="Start over?"><div class="cbox"><div class="cq" aria-hidden="true">🏠❓</div><div class="crow"><button class="cbtn yes" data-act="yes" aria-label="Yes, start over">✅</button><button class="cbtn no" data-act="no" aria-label="No, keep playing">❌</button></div></div></div>
 </div>
 <div id="rotate"><div class="ico">📱↻</div><p>Turn your phone upright to play!</p></div>
 <script>
@@ -272,6 +314,7 @@ const Snd = {
     buzz(t){ this.osc(150,t,.18,{type:'square',vol:.1,lp:900}); this.osc(120,t+.22,.25,{type:'square',vol:.1,lp:900}); },
     boo(t){ this.osc(320,t,.9,{type:'sawtooth',to:80,vol:.3,lp:1400,vib:6,vibAmt:20}); this.noise(t,.4,{type:'lowpass',f:800,vol:.3}); this.osc(60,t,.5,{to:30,vol:.6}); },
     scream(t){ [0,.12,.24].forEach((d,i)=>this.osc(900+i*150,t+d,.45,{to:1500+i*200,type:'triangle',vol:.12,vib:14,vibAmt:60})); },
+    click(t){ this.noise(t,.03,{type:'highpass',f:3000,vol:.4,a:.002}); this.osc(1800,t,.04,{vol:.12}); this.noise(t+.09,.03,{type:'highpass',f:3500,vol:.3,a:.002}); },
     steps(t){ for(let i=0;i<4;i++) this.osc(90,t+i*.22,.1,{to:50,vol:.35}); },
     slam(t){ this.osc(80,t,.35,{to:35,vol:.9}); this.noise(t,.25,{type:'lowpass',f:900,vol:.5}); },
     sting(t){ [392,370,349].forEach((f,i)=>this.osc(f,t+i*.18,.3,{type:'square',vol:.07,lp:1500})); },
@@ -387,7 +430,7 @@ const VO_LINES={"title_01":["We're going on a goon hunt! A spooky tap-along stor
  "psst_window":["Psst... peek in the window first!","L",0.75],
  "found_pumpkin":["You found a stumbly zombie! Stumble grab, HUG!","L"],
  "found_swamp":["You found a splashy swamp creature! Blub blub!","L"],
- "found_tunnel":["You found a sneaky goblin! Hee hee hee!","L"],
+ "found_tunnel":["You found a flappy Dracula! Flutter skulk!", "L"],
  "found_forest":["You found a big, stompy Frankenstein! Grumble, boogie!","L"],
  "found_graveyard":["You found two giggly ghosts! Ooo-hoo-hoo!","L"],
  "found_house":["You found a peek-a-boo mummy! Peek-a-boo!","L"],
@@ -400,16 +443,12 @@ const VO_LINES={"title_01":["We're going on a goon hunt! A spooky tap-along stor
  "goon_04E":["Little, beady eyes!","E",0.75],
  "goon_05":["It's a GOON! Boo! Everybody run!","L"],
  "goon_05E":["Aaah! Run!","E"],
- "goon_06":["But the littlest unicorn cheers: Hooray, a monster!","L"],
- "run_house":["Back through the haunted house!","L"],
- "run_graveyard":["Back through the foggy graveyard!","L"],
- "run_forest":["Back through the shadowy forest!","L"],
- "run_tunnel":["Back through the dusty tunnel!","L"],
- "run_swamp":["Back through the murky swamp!","L"],
+ "run_house":["Quick! Back through the haunted house!", "L"],
+ "run_graveyard":["Back through the graveyard!", "L"],
+ "run_forest":["Back through the forest!", "L"],
+ "run_tunnel":["Back through the tunnel!", "L"],
+ "run_swamp":["Back through the swamp!", "L"],
  "run_pumpkin":["Back through the pumpkin patch!","L"],
- "home_01":["Home! Up the stairs! Under the covers! Phew... safe and snug.","L"],
- "home_02":["Wait... someone is missing! Count the eyes. Who is it?","L"],
- "party_01":["There's the littlest unicorn! Monsters aren't scary. Monsters are fun! It's a monster party with the Goon!","L"],
  "count_0":["You found zero of six hiding monsters! Tap them to make them dance!","L"],
  "count_1":["You found one of six hiding monsters! Tap them to make them dance!","L"],
  "count_2":["You found two of six hiding monsters! Tap them to make them dance!","L"],
@@ -421,11 +460,47 @@ const VO_LINES={"title_01":["We're going on a goon hunt! A spooky tap-along stor
  "pop_hee":["Hee hee!","E"],
  "goon_wait":["Wait! Let's play!","L"],
  "goon_laugh":["Ha ha ha!","L"],
- "uni_whee":["Wheee!","E"]};
+ "uni_whee":["Wheee!","E"],
+ "p_start":["Press Start the Hunt!", "L"],
+ "p_goon":["Tap the Goon!", "L"],
+ "p_scared_pumpkin":["Press Not scared either!", "L"],
+ "p_scared_swamp":["Press Not REALLY scared!", "L"],
+ "p_scared_tunnel":["Press Just a little scared!", "L"],
+ "p_scared_forest":["Press A little MORE scared!", "L"],
+ "p_scared_graveyard":["Press REALLY scared!", "L"],
+ "p_scared_house":["Press Really, REALLY scared!", "L"],
+ "p_over":["Tap Over!", "L"],
+ "p_under":["Tap Under!", "L"],
+ "p_through":["Tap Through!", "L"],
+ "p_next":["Press Keep hunting!", "L"],
+ "p_find":["Tap the hiding monster!", "L", 0.8],
+ "p_enter":["Press Who's in there?", "L", 0.8],
+ "p_peek":["Press Peek!", "L", 0.9],
+ "p_run":["Press Run!", "L"],
+ "p_keeprun":["Press Keep running!", "L"],
+ "p_party":["Press Dance party!", "L"],
+ "p_night":["Press Goodnight!", "L"],
+ "p_again":["Press Hunt Again!", "L"],
+ "nav_restart_q":["Start over? Press the green check for yes. Press the red X to keep playing!", "L"],
+ "nav_back":["Let's go back!", "L"],
+ "nav_keep":["Okay! Let's keep playing!", "L"],
+ "stairs_01":["Get to the front door! Open the door. Up the stairs.", "L"],
+ "stairs_02":["Oh no! We forgot to shut the door!", "L"],
+ "stairs_E":["Nooo! Don't go back in there!", "E"],
+ "cover_01":["Keep running! Into the bedroom. Into bed. Under the covers.", "L"],
+ "cover_02":["We're not going on a goon hunt again!", "L", 0.8],
+ "cover_E":["We're not going on a goon hunt again!", "E", 0.8],
+ "cover_03":["Wait... who's holding the flashlight?", "L", 0.8],
+ "goonbed_01":["Surprise! Can I have a sleepover? I just wanted to play!", "L"],
+ "uni_friend":["Hi, Goon! Wanna be friends?", "E"],
+ "goonbed_02":["Yes! Best friends!", "L"],
+ "party_02":["Monsters aren't scary. Monsters are fun! It's a monster dance party!", "L"],
+ "night_01":["Goodnight, Goon. Goodnight, monsters.", "L"],
+ "night_E":["Goodnight, Goon!", "E"]};
 const BEDS={march:{beat:.5,loop:16,vol:.42},suspense:{beat:.5,loop:8,vol:.5},escape:{beat:.3716,loop:8.9184,vol:.4}};
 const SILENT_MP3='data:audio/mpeg;base64,SUQzBAAAAAAAIlRTU0UAAAAOAAADTGF2ZjYxLjcuMTAzAAAAAAAAAAAAAAD/83DAAAAAAAAAAAAASW5mbwAAAA8AAAAMAAADKQBKSkpKSkpKSlpaWlpaWlpaa2tra2tra2t7e3t7e3t7e3uMjIyMjIyMjJycnJycnJycra2tra2tra2tvb29vb29vb3Ozs7Ozs7Ozt/f39/f39/f3+/v7+/v7+/v//////////8AAAAATGF2YzYxLjE5AAAAAAAAAAAAAAAAJAM3AAAAAAAAAyk5cS8nAAAAAAAAAAAAAAAAAP/zIMQAAAADSAAAAABMQU1FMy4xMDBVVVVVVVVVVVVVVUxBTUUzLjEwMFVVVVVVVVVVVVX/8yLEJwAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FMy4xMDBVVVVVVVVVVVVVVf/zIMRPAAADSAAAAABVVVVVVVVVVVVVVVVVVVVVVVVVTEFNRTMuMTAwVVVVVVVVVVVVVVX/8yDEdgAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FMy4xMDBVVVVVVVVVVVVV//MgxJ0AAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVTEFNRTMuMTAwVVVVVVVVVVVVVf/zIsTEAAADSAAAAABVVVVVVVVVVVVVVVVVVVVVVVVVVUxBTUUzLjEwMFVVVVVVVVVVVVVV//MgxNgAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVf/zIMTYAAADSAAAAABVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/8yDE2AAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//MixNcAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/8yDE2AAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//MgxNgAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVQ==';
 const VO={
-  base:'audio/', on:true, ctx:null, buf:{}, raw:{}, bad:{}, ready:null, live:[], tok:0,
+  base:'audio/', on:true, pre:null, ctx:null, buf:{}, raw:{}, bad:{}, ready:null, live:[], tok:0,
   grid:{t0:0,beat:.5}, bedName:null, bed:null, shoutEnd:0, DUCK:.3,
   ids(){ return Object.keys(VO_LINES).concat(Object.keys(BEDS).map(b=>'bed_'+b)); },
   prefetch(){ // start downloading right away; decoding waits for the first tap
@@ -473,10 +548,12 @@ const VO={
   say(id){ if(!this.on) return; const L=VO_LINES[id]; if(L) TTS.say(L[0],{pitch:L[1]==='E'?1.5:1.1,rate:L[1]==='E'?1:.95}); },
   /* Play a run of lines. items: [{id, q:'bar'|'beat'|'half', delay, gap, rate, gain, on(t,dur)}].
      on() fires when the line starts (also when voices are off), so text/pops stay in step. */
-  seq(items,{keep=false}={}){
+  busy(){ return this.live.length>0; },
+  seq(items,{keep=false,end=null}={}){
     if(!keep) this.stop();
+    if(this.pre){ items=[{id:this.pre,gap:.12},...items.map((it,i)=>i?it:Object.assign({},it,{delay:0}))]; this.pre=null; }
     const tok=this.tok;
-    if(!this.ctx){ if(this.on) TTS.say(items.map(i=>(VO_LINES[i.id]||[''])[0]).join(' ')); items.forEach(i=>i.on&&i.on(0,this.dur(i.id))); return; }
+    if(!this.ctx){ if(this.on) TTS.say(items.map(i=>(VO_LINES[i.id]||[''])[0]).join(' ')); items.forEach(i=>i.on&&i.on(0,this.dur(i.id))); if(end) later(()=>{ if(tok===this.tok) end(); },items.reduce((a,i)=>a+this.dur(i.id)*1000+(i.delay||0)*1000,300)); return; }
     const need=items.map(i=>i.id); if(this.bedName) need.push('bed_'+this.bedName);
     this.wait(need).then(()=>{
       if(tok!==this.tok) return;
@@ -490,6 +567,7 @@ const VO={
         if(it.on) later(()=>{ if(tok===this.tok) it.on(at,d); },ms);
         t=at+d+(it.gap||0);
       });
+      if(end) later(()=>{ if(tok===this.tok) end(); },Math.max(0,(t-this.now())*1000));
     });
   },
   shout(id,unit='half'){ // a tap-triggered word: on the next half-beat, never stacked on itself
@@ -763,7 +841,7 @@ ${toes([[80,84,5],[82,75,4.4],[77,68,4],[70,64,3.6]],1)}
    Monsters now mirror the book pages (Michael Rex, We're Going on a Goon Hunt):
      pumpkin   -> zombie (book: stumbles through the pumpkin patch, "Stumble grab!")
      swamp     -> swamp creature (Creature-from-the-Black-Lagoon style)
-     tunnel    -> goblin in a long rust-brown hooded coat
+     tunnel    -> Dracula (r3; the goblin is kept as an extra dancer at the party)
      forest    -> Frankenstein's monster
      graveyard -> the old-couple ghosts
      house     -> mummy peeking out of a gold oval mirror
@@ -930,7 +1008,44 @@ const mummy={name:"a peek-a-boo mummy", say:"Peek-a-boo!",
   <path d="M6 -22 v6 M14 -21 v6 M20 -13 v6" stroke="${MW2}" stroke-width="1.4"/>
   <g transform="translate(0 -24)">${mHead()}</g></g>${st?star(28,-50):''}</g>`};
 
-return {pumpkin:zombie, swamp, tunnel:goblin, forest:frank, graveyard:ghosts, house:mummy};
+/* ---------- DRACULA (tunnel): friendly, flappy, from among the bats ---------- */
+const DF='#c9d6c4', DF2='#a9b8a4', DK='#16101e', DC='#241a30', DR='#c8243a', DR2='#9c1a2c';
+const dHead=()=>`<path d="M-15 -14 L-23 -24 L-16 -5Z M15 -14 L23 -24 L16 -5Z" fill="${DF}" ${o(1.8)}/>
+ <path d="M-15 -8 Q-16 -30 0 -31 Q16 -30 15 -8 Q12 7 0 8 Q-12 7 -15 -8Z" fill="${DF}" ${o()}/>
+ <path d="M9 -26 Q15 -16 12 -2 Q9 4 3 6 Q12 -6 9 -26Z" fill="${DF2}" opacity=".7"/>
+ <path d="M-17 -10 Q-19 -35 0 -36 Q19 -35 17 -10 Q15 -22 9 -25 L0 -15 L-9 -25 Q-15 -22 -17 -10Z" fill="${DK}" ${o(2)}/>
+ <path d="M-10 -31 Q-3 -34 6 -32" stroke="#6b6890" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+ <path d="M-12 -14 Q-8 -18 -3 -14 M3 -14 Q8 -18 12 -14" stroke="${K}" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+ ${blinkEyes([-6,6],-9,3.9,1.7,.3)}
+ <path d="M-1 -6 Q0 -3 2 -5" stroke="${K}" stroke-width="1.4" fill="none"/>
+ <circle cx="-10" cy="-1" r="2.6" fill="#ff8fa8" opacity=".5"/><circle cx="10" cy="-1" r="2.6" fill="#ff8fa8" opacity=".5"/>
+ <path d="M-8 0 Q0 7 8 0 Q0 3.5 -8 0Z" fill="#5a1426" ${o(1.6)}/>
+ <path d="M-5 1 l1.4 4 l1.4 -3.4Z M2.2 1.6 l1.4 3.4 l1.4 -4Z" fill="#fff" stroke="${K}" stroke-width=".8" stroke-linejoin="round"/>`;
+const collar=(s=1)=>`<path d="M-11 -24 L-31 -66 L-15 -57 L-2 -36Z M11 -24 L31 -66 L15 -57 L2 -36Z" fill="${DK}" ${o(2)}/><path d="M-11 -28 L-26 -60 L-15 -54 L-5 -38Z M11 -28 L26 -60 L15 -54 L5 -38Z" fill="${DR}"/>`;
+const pBat=(x,y,s,cls)=>`<g transform="translate(${x} ${y})"><g class="${cls}"><g transform="scale(${s})">${batWing('#2b1640',30)}<ellipse cx="0" cy="2" rx="8" ry="9" fill="#2b1640"/><circle cx="-3" cy="0" r="2" fill="#ffe066"/><circle cx="3" cy="0" r="2" fill="#ffe066"/></g></g></g>`;
+const drac={name:"a flappy Dracula", say:"Flutter skulk!",
+ peek:()=>`<g class="pk"><path d="M-26 -16 L-6 -22 L4 -14 L22 -20 L28 8 L6 18 L-10 12 L-28 16Z" fill="#0b0705" stroke="#5a4434" stroke-width="2"/>
+  <g transform="translate(0 10) scale(.82)">${collar()}<g transform="translate(0 -20)">${dHead()}</g>
+   <path d="M-27 2 Q-22 -16 0 -14 Q22 -16 27 2 L30 30 L-30 30Z" fill="${DC}" ${o(2)}/><path d="M-27 2 Q-22 -16 0 -14 Q22 -16 27 2" stroke="${DR}" stroke-width="3" fill="none"/>
+   ${hand(16,-14,-75,DF,1)}</g>
+  ${pBat(-28,-26,.5,'bob')}${pBat(30,-30,.4,'bob')}</g>`,
+ found:(st)=>`<g class="fd"><g transform="scale(.95) translate(0 4)">
+  <ellipse cx="0" cy="34" rx="34" ry="4.5" fill="#000" opacity=".25"/>
+  <path d="M-8 -28 Q-30 -34 -46 -42 Q-42 -6 -38 30 Q-30 25 -24 31 Q-16 25 -9 31 L9 31 Q16 25 24 31 Q30 25 38 30 Q42 -6 46 -42 Q30 -34 8 -28Z" fill="${DK}" ${o()}/>
+  <path d="M-8 -24 Q-27 -30 -40 -36 Q-37 -4 -34 26 Q-28 22 -23 27 Q-16 22 -10 27 L10 27 Q16 22 23 27 Q28 22 34 26 Q37 -4 40 -36 Q27 -30 8 -24Z" fill="${DR}"/>
+  <path d="M-34 26 Q-36 0 -40 -36 M34 26 Q36 0 40 -36" stroke="${DR2}" stroke-width="2" fill="none" opacity=".7"/>
+  ${limb('M-6 8 L-8 28',DC,9)}${limb('M6 8 L8 28',DC,9)}
+  <path d="M-17 33 Q-17 26 -9 27 L-3 30 Q-3 34 -9 34Z M3 34 Q3 30 9 27 Q17 26 17 33 L9 34Z" fill="#0d0912" ${o(1.8)}/>
+  <path d="M-14 -26 Q0 -30 14 -26 L13 12 Q0 15 -13 12Z" fill="${DC}" ${o()}/>
+  <path d="M-6 -27 L0 -8 L6 -27Z" fill="#f4f0f8" ${o(1.4)}/><path d="M-5 -25 L0 -22 L5 -25 L5 -19 L0 -22 L-5 -19Z" fill="${DK}"/>
+  <path d="M-7 -21 L0 -6 L7 -21" stroke="${DR}" stroke-width="2.2" fill="none"/><circle cx="0" cy="-5" r="3.6" fill="#f0c43a" ${o(1.4)}/>
+  ${limb('M-12 -22 Q-28 -32 -41 -40',DC,8)}${hand(-44,-43,-55,DF,1.15)}
+  ${limb('M12 -22 Q28 -32 41 -40',DC,8)}${hand(44,-43,55,DF,1.15)}
+  ${collar()}<g transform="translate(0 -24)">${dHead()}</g></g>
+  ${pBat(0,-20,.45,'bp bp1')}${pBat(0,-20,.4,'bp bp2')}${pBat(0,-20,.35,'bp bp3')}
+  ${st?star(32,-54):''}</g>`};
+
+return {pumpkin:zombie, swamp, tunnel:drac, forest:frank, graveyard:ghosts, house:mummy, goblin};
 })();
 // A tappable obstacle piece (vine, bubble, bat, footprint, fog). Hit circle r=48 (≈ 90px+ on a phone).
 const tg=(x,y,inner,label,delay=0)=>`<g transform="translate(${x} ${y})"><g class="tgt" data-act="tgt" role="button" tabindex="0" aria-label="${label}"><circle r="48" fill="transparent"/><g class="idle" style="animation-delay:${delay}s">${inner}</g></g></g>`;
@@ -1075,53 +1190,103 @@ goonScene(st){
     <path d="M300 64 L360 64 M300 64 L350 104 M300 64 L320 120 M316 64 Q322 80 310 92 M334 64 Q338 90 316 104" stroke="#ddd" stroke-opacity=".4" stroke-width="1.5" fill="none"/>
     <rect x="80" y="340" width="240" height="14" fill="#3a1f14"/>${pk(36,334,.9)}${pk(364,338,.9)}`;
   if(st<4){
-    const shade=[.95,.74,.52,.3][st], hl=['','bumps','ears','eyes'][st];
-    s+=`<defs><clipPath id="dclip"><rect x="105" y="70" width="190" height="270" rx="6"/></clipPath></defs>
-      <g clip-path="url(#dclip)"><g transform="translate(200 262) scale(.88)">${goon({hl})}</g><rect x="100" y="60" width="200" height="290" fill="#07020c" opacity="${shade}"/></g>`;
-    if(st===0) s+=`<g transform="translate(200 189)"><g class="blink"><circle cx="-19" r="5" fill="#b8ff7a" filter="url(#fGlow)"/><circle cx="19" r="5" fill="#b8ff7a" filter="url(#fGlow)"/></g></g>`;
+    /* Only a sliver is ever lit before the last Peek: a near-black silhouette in the
+       doorway, plus small flashlight spots that add one feature per step
+       (head bumps -> ears -> eyes). The grin and body stay dark until the reveal. */
+    const G=`<g transform="translate(200 262) scale(.88)">${goon()}</g>`;
+    const SP=[[],[['e',203,160,46,18]],[['e',203,160,46,18],['c',142,186,30],['c',258,184,30]],[['e',203,160,46,18],['c',142,186,30],['c',258,184,30],['c',181,189,17],['c',218,187,17]]][st];
+    const shape=p=>p[0]==='e'?`<ellipse cx="${p[1]}" cy="${p[2]}" rx="${p[3]}" ry="${p[4]}"/>`:`<circle cx="${p[1]}" cy="${p[2]}" r="${p[3]}"/>`;
+    const tgt=SP[SP.length-1]||[0,200,189];
+    s+=`<defs><clipPath id="dclip"><rect x="105" y="70" width="190" height="270" rx="6"/></clipPath>${SP.length?`<clipPath id="gspot">${SP.map(shape).join('')}</clipPath>`:''}
+        <filter id="fSil" x="-10%" y="-10%" width="120%" height="120%" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="0 0 0 0 .0275  0 0 0 0 .0078  0 0 0 0 .047  0 0 0 1 0"/></filter>
+        <radialGradient id="gSpot"><stop offset="0" stop-color="#fff3a0" stop-opacity=".35"/><stop offset="1" stop-color="#fff3a0" stop-opacity="0"/></radialGradient></defs>
+      <g clip-path="url(#dclip)" class="goonpeek" data-step="${st}">
+        ${st?`<g class="gsil" filter="url(#fSil)" opacity="1">${G}</g>`:''}
+        ${SP.length?`<polygon points="70,420 140,420 ${tgt[1]+24},${tgt[2]} ${tgt[1]-24},${tgt[2]}" fill="#fff3a0" opacity=".08"/>${SP.map(p=>`<circle cx="${p[1]}" cy="${p[2]}" r="${(p[3])*1.7}" fill="url(#gSpot)"/>`).join('')}
+          <g class="glit" clip-path="url(#gspot)">${G}</g>`:''}
+      </g>`;
+    if(st<3) s+=`<g transform="translate(200 189)"><g class="blink"><circle cx="-19" r="5" fill="#b8ff7a" filter="url(#fGlow)"/><circle cx="19" r="5" fill="#b8ff7a" filter="url(#fGlow)"/></g></g>`;
     s+=`<rect data-act="peek" role="button" aria-label="peek into the doorway" x="105" y="70" width="190" height="270" fill="transparent"/>`+famG({lvl:2},0,.55);
   } else {
     s+=`<g transform="translate(200 236) scale(1.2)"><g class="booPop"><g class="partydance">${goon()}</g></g></g>`+famG({lvl:2},0,.55)+
-      heart(232,340,0)+heart(254,326,.6)+`<text x="282" y="352" font-size="22" font-weight="900" class="ttl" style="fill:#ff8fd0;stroke-width:5px">Yay!</text>
-      <g transform="translate(58 318)"><g class="shake2"><text font-size="26" font-weight="900" class="ttl" style="fill:#fff;stroke-width:5px">EEK!</text></g></g>`;
+      `<g transform="translate(58 318)"><g class="shake2"><text font-size="26" font-weight="900" class="ttl" style="fill:#fff;stroke-width:5px">EEK!</text></g></g>`;
   }
   return s;
 },
-home(step){
-  const eyes=(x,y,c='#fff',p='#222')=>`<g transform="translate(${x} ${y})"><g class="blink"><circle cx="-6" r="5" fill="${c}"/><circle cx="6" r="5" fill="${c}"/><circle cx="-5" cy="1" r="2.4" fill="${p}"/><circle cx="7" cy="1" r="2.4" fill="${p}"/></g></g>`;
-  let peek=homePeek(eyes);
-  let s=R(-900,340,'#4a2a6e')+R(-900,340,'url(#pDots)')+R(330,1000,'#6b3f2a')+
-   `<path d="M-700 360 H1100 M-700 395 H1100 M-700 430 H1100" stroke="#5a3322" stroke-width="3"/>
-    <rect x="34" y="40" width="100" height="110" rx="6" fill="#1b0933" stroke="#7a4a2a" stroke-width="8"/>${moon(100,76,15)}<path d="M84 40 V150 M34 95 H134" stroke="#7a4a2a" stroke-width="6"/>
-    <path d="M24 34 Q40 100 24 160 L44 160 Q56 96 44 34Z M144 34 Q128 100 144 160 L124 160 Q112 96 124 34Z" fill="#ff8fd0"/>
-    <rect x="276" y="64" width="64" height="54" rx="4" fill="#2a1440" stroke="#d4a24a" stroke-width="5"/>${pk(308,94,.6)}
-    <path d="M60 272 V190 Q60 165 85 165 H315 Q340 165 340 190 V272Z" fill="#8a5a2b" stroke="#5a3418" stroke-width="5"/>
-    <ellipse cx="200" cy="420" rx="170" ry="18" fill="#a03a6a" opacity=".6"/>
-    <ellipse cx="120" cy="246" rx="58" ry="20" fill="#f4eefe"/><ellipse cx="280" cy="246" rx="58" ry="20" fill="#f4eefe"/>
-    <g transform="translate(0 -16)"><g class="shake1">${peek}</g></g>
-    <rect x="56" y="330" width="14" height="40" fill="#5a3418"/><rect x="330" y="330" width="14" height="40" fill="#5a3418"/>
-    <g class="snuggle"><path d="M38 256 Q200 238 362 256 L372 348 Q200 362 28 348Z" fill="#3d5bd9" stroke="#2a3fa0" stroke-width="4"/>
-     <rect x="80" y="276" width="40" height="34" rx="4" fill="#5a78f0"/><rect x="180" y="290" width="40" height="34" rx="4" fill="#ff8a1f" opacity=".8"/><rect x="280" y="276" width="40" height="34" rx="4" fill="#5a78f0"/>${star(200,268)}</g>`;
-  if(step===1) s+=`<g transform="translate(200 140)"><g class="floaty"><text text-anchor="middle" font-size="84" font-weight="900" class="ttl" style="fill:#ff8fd0">?</text></g></g>`;
-  return s;
+stairs(open){
+  let stripes=''; for(let x=-700;x<1100;x+=26) stripes+=`<rect x="${x}" y="-900" width="13" height="1900" fill="#c4581c" opacity=".55"/>`;
+  let steps=''; for(let i=0;i<9;i++){ const x=150+i*30, y=430-i*32; steps+=`<path d="M${x} ${y} h${400} v32 h-400Z" fill="${i%2?'#2a1810':'#33201a'}"/><path d="M${x} ${y} h400" stroke="#5a3a24" stroke-width="3"/>`; }
+  let rail=''; for(let i=0;i<9;i++){ const x=162+i*30, y=430-i*32; rail+=`<path d="M${x} ${y} v-58" stroke="#1d120c" stroke-width="5"/>`; }
+  const fam=[['dad',.42],['witch',.5],['skel',.5],['vamp',.5],['uni',.5],['dog',.5]].map(([k,sc],i)=>{ const x=168+i*30, y=430-i*32; return `<g transform="translate(${x+8} ${y}) scale(${sc})"><g class="runbob" style="animation-delay:${-i*.07}s">${C[k]()}</g></g>`; }).reverse().join('');
+  const door=open
+    ?`<rect x="22" y="160" width="96" height="190" fill="#0d0620"/><circle cx="40" cy="180" r="1.6" fill="#fff8d0"/><circle cx="100" cy="230" r="1.6" fill="#fff8d0"/><circle cx="52" cy="250" r="2" fill="#fff8d0"/><circle cx="70" cy="200" r="10" fill="url(#gMoon)"/>
+      <g transform="translate(70 330) scale(.4)"><g class="booPop"><g class="partydance">${goon()}</g></g></g>
+      <g transform="translate(88 132)"><rect x="-62" y="-20" width="124" height="30" rx="13" fill="#fff"/><path d="M-20 10 l-6 14 l16 -14Z" fill="#fff"/><text y="1" text-anchor="middle" font-size="14" font-weight="bold" fill="#2a1046">Wait! Let's play!</text></g>
+      <path d="M118 160 L150 146 L150 368 L118 350Z" fill="#7a3f1f" stroke="#3e1f0e" stroke-width="3"/>`
+    :`<rect x="22" y="160" width="96" height="190" fill="#0d0620"/><g transform="translate(70 200)"><circle r="10" fill="url(#gMoon)"/></g>
+      <path d="M118 160 L150 146 L150 368 L118 350Z" fill="#7a3f1f" stroke="#3e1f0e" stroke-width="3"/>`;
+  return R(-900,1000,'#e0782a')+stripes+R(350,1000,'#3a2216')+
+   `<rect x="14" y="152" width="112" height="204" fill="none" stroke="#5a3418" stroke-width="10"/>${door}
+    <rect x="290" y="60" width="54" height="64" rx="4" fill="#2a1440" stroke="#d4a24a" stroke-width="5"/><path d="M306 104 Q306 76 317 76 Q328 76 328 104 l-4 -4 l-4 4 l-3 -4 l-4 4 l-3 -4Z" fill="#eef6ff"/><circle cx="313" cy="88" r="2" fill="#2a1440"/><circle cx="321" cy="88" r="2" fill="#2a1440"/>
+    ${steps}${fam}${rail}<path d="M150 372 L420 84" stroke="#1d120c" stroke-width="9" stroke-linecap="round"/>`;
 },
-party(found){
+bedroom(mode){
+  const K='#1b1024';
+  const eyes=(x,y,c='#fff',p='#222')=>`<g transform="translate(${x} ${y})"><g class="blink"><circle cx="-6" r="5" fill="${c}"/><circle cx="6" r="5" fill="${c}"/><circle cx="-5" cy="1" r="2.4" fill="${p}"/><circle cx="7" cy="1" r="2.4" fill="${p}"/></g></g>`;
+  const uniPeek=(x,y)=>`<g transform="translate(${x} ${y})"><path d="M11 -12 Q22 -8 19 4" stroke="#8fdc4a" stroke-width="5" fill="none" stroke-linecap="round"/><circle r="18" fill="#d59cf5" stroke="${K}" stroke-width="2"/>
+    <path d="M-13 -11 L-12 -24 L-4 -15Z M13 -11 L12 -24 L4 -15Z" fill="#d59cf5" stroke="${K}" stroke-width="1.6"/><path d="M-4 -16 L4 -16 L0 -36Z" fill="#ffd84a" stroke="${K}" stroke-width="1.6"/>
+    <circle cy="3" r="12" fill="#f4c9a2" stroke="${K}" stroke-width="1.8"/></g>`+eyes(x,y+1)+
+    (mode==='friends'?`<path d="M${x-5} ${y+9} Q${x} ${y+14} ${x+5} ${y+9}" stroke="#7a2b3b" stroke-width="2" fill="#c2185b"/>`:'');
+  // orange patchwork Halloween quilt: triangle patches + pumpkins, ghosts and witch hats
+  const pal=['#e8892a','#f2a93b','#c2621c','#f7c45a','#a8481a','#d9772a'];
+  let patch=''; let n=0;
+  for(let y=236;y<380;y+=36) for(let x=10;x<400;x+=36){
+    const a=pal[(n*7)%6], b=pal[(n*3+2)%6]; n++;
+    patch+=`<path d="M${x} ${y} h36 v36Z" fill="${a}"/><path d="M${x} ${y} v36 h36Z" fill="${b}"/><path d="M${x} ${y} h36 v36 h-36Z M${x} ${y} l36 36" fill="none" stroke="#5a2a10" stroke-width="1.2" stroke-dasharray="3 2"/>`;
+    const cx=x+18, cy=y+18, m=(n*5)%7;
+    if(m===0) patch+=`<g transform="translate(${cx} ${cy})"><ellipse rx="11" ry="9" fill="#ff8a1f" stroke="#5a2a10" stroke-width="1.4"/><path d="M-5 -3 l2 -3 l2 3Z M1 -3 l2 -3 l2 3Z M-6 3 q6 5 12 0 l-2 2 l-2 -2 l-2 2 l-2 -2 l-2 2Z" fill="#3a1606"/><path d="M0 -9 v-4" stroke="#3f7a2a" stroke-width="2.4"/></g>`;
+    else if(m===3) patch+=`<g transform="translate(${cx} ${cy})"><path d="M-8 9 L-8 -2 Q-8 -11 0 -11 Q8 -11 8 -2 L8 9 L5 6 L2 9 L-1 6 L-4 9Z" fill="#9fd6ff" stroke="#3a5a84" stroke-width="1.2"/><circle cx="-3" cy="-3" r="1.4" fill="#1b2a40"/><circle cx="3" cy="-3" r="1.4" fill="#1b2a40"/></g>`;
+    else if(m===5) patch+=`<g transform="translate(${cx} ${cy})"><path d="M-12 8 h24 M-7 8 L-1 -12 Q2 -6 7 8Z" fill="#1d1424" stroke="#1d1424" stroke-width="2.4" stroke-linejoin="round"/><rect x="-6" y="2" width="12" height="3" fill="#9b6ad6"/></g>`;
+  }
+  const quiltPath='M24 262 Q200 242 376 262 L388 356 Q200 372 12 356Z';
+  const hide=mode!=='friends';
+  const heads=`<g class="bedfam"><g transform="translate(-6 ${hide?30:18}) scale(.86)"><g class="${hide?'shake1':''}">${homePeek(eyes)}</g></g><g class="uniHi">${uniPeek(282,hide?246:234)}</g></g>`;
+  let goonBit='';
+  if(mode==='light') goonBit=`<g class="flick"><polygon points="352,258 296,40 396,30" fill="#fff7b0" opacity=".42"/></g><ellipse cx="352" cy="270" rx="26" ry="12" fill="#ffd25a" opacity=".55" filter="url(#fGlow)"/>`;
+  if(mode==='friends') goonBit=`<g class="flick"><polygon points="366,200 300,20 410,0" fill="#fff7b0" opacity=".38"/></g>
+    <g transform="translate(338 262) scale(.42)"><g class="booPop">${goon()}<g transform="translate(70 -54) rotate(-28)"><rect x="-10" y="-8" width="36" height="16" rx="4" fill="#3d5bd9" stroke="${K}" stroke-width="3"/><rect x="24" y="-11" width="12" height="22" rx="3" fill="#d8f4ff" stroke="${K}" stroke-width="3"/></g></g></g>
+    <g class="hearts">${heart(240,196,0)}${heart(312,176,.4)}${heart(160,186,.8)}</g>`;
+  return R(-900,1000,'#4a2016')+(()=>{ let st=''; for(let x=-700;x<1100;x+=30) st+=`<rect x="${x}" y="-900" width="15" height="1900" fill="#5e2a1c"/>`; return st; })()+R(380,1000,'#3a1c12')+
+   `<rect x="30" y="40" width="96" height="100" rx="6" fill="#0d0620" stroke="#7a4a2a" stroke-width="8"/>${moon(96,74,14)}<path d="M78 40 V140 M30 90 H126" stroke="#7a4a2a" stroke-width="6"/>
+    <path d="M44 272 V178 Q44 150 72 150 H328 Q356 150 356 178 V272Z" fill="#8a5a2b" stroke="#5a3418" stroke-width="5"/><path d="M64 272 V186 Q64 168 82 168 H318 Q336 168 336 186 V272" fill="none" stroke="#6e4420" stroke-width="4"/>
+    <ellipse cx="120" cy="250" rx="62" ry="20" fill="#f4eefe"/><ellipse cx="280" cy="250" rx="62" ry="20" fill="#f4eefe"/>
+    ${mode==='friends'?goonBit:''}${heads}
+    <rect x="40" y="350" width="14" height="40" fill="#5a3418"/><rect x="346" y="350" width="14" height="40" fill="#5a3418"/>
+    <defs><clipPath id="qclip"><path d="${quiltPath}"/></clipPath></defs>
+    <g class="${hide?'snuggle':''}"><path d="${quiltPath}" fill="#e8892a"/><g clip-path="url(#qclip)">${patch}</g><path d="${quiltPath}" fill="none" stroke="#5a2a10" stroke-width="4"/>
+     ${mode==='light'?`<ellipse cx="352" cy="282" rx="30" ry="18" fill="#c2621c" opacity=".5"/>`:''}</g>
+    ${mode==='light'?goonBit:''}`;
+},
+party(found,night){
   const cols=['#ff8fd0','#7ee03a','#ff8a1f','#ffe066','#9b59ff','#6ab8ff'];
-  let conf=''; for(let i=0;i<22;i++) conf+=`<g transform="translate(${(i*37)%420-10} ${-(i*23)%120})"><g class="fall" style="animation-delay:${(-i*.31).toFixed(2)}s"><rect width="7" height="11" rx="2" fill="${cols[i%6]}"/></g></g>`;
-  const pos={pumpkin:[62,140],tunnel:[338,140],swamp:[58,265],forest:[342,265],graveyard:[244,392],house:[340,392]};
-  let mons=''; for(const id in pos){ const [x,y]=pos[id]; mons+=`<g transform="translate(${x} ${y}) scale(.85)"><g class="dancer" data-act="dance" data-k="${id}" role="button" tabindex="0" aria-label="${MON[id].name}"><circle r="50" fill="transparent"/>${MON[id].found(found.has(id))}</g></g>`; }
-  return SKY()+stars()+
+  let conf=''; if(!night) for(let i=0;i<22;i++) conf+=`<g transform="translate(${(i*37)%420-10} ${-(i*23)%120})"><g class="fall" style="animation-delay:${(-i*.31).toFixed(2)}s"><rect width="7" height="11" rx="2" fill="${cols[i%6]}"/></g></g>`;
+  const pos={pumpkin:[62,140],tunnel:[338,140],swamp:[58,265],forest:[342,265],graveyard:[244,392],house:[340,392],goblin:[150,392]};
+  let mons=''; for(const id in pos){ const [x,y]=pos[id]; mons+=`<g transform="translate(${x} ${y}) scale(.85)"><g class="${night?'':'partydance'}" style="animation-delay:${(-x/300).toFixed(2)}s"><g class="dancer" data-act="dance" data-k="${id}" role="button" tabindex="0" aria-label="${MON[id].name}"><circle r="50" fill="transparent"/>${MON[id].found(id!=='goblin'&&found.has(id))}</g></g></g>`; }
+  const zz=night?[[90,90,0],[300,70,.7],[200,40,1.4]].map(([x,y,d])=>`<g transform="translate(${x} ${y})"><g class="floaty" style="animation-delay:${d}s"><text font-size="30" font-weight="900" class="ttl" style="fill:#cfd3ff;stroke-width:5px">Zzz</text></g></g>`).join(''):'';
+  return SKY()+stars()+(night?moon(330,64,26):'')+
    `<path d="M-700 250 Q200 214 1100 250 V1000 H-700Z" fill="#241238"/>${R(338,1000,'#1e0f30')}
     ${grave(130,246,.55,-6)}${grave(275,242,.55,5)}
-    <g transform="translate(200 40)"><g class="spin">${[0,60,120,180,240,300].map((a,i)=>`<path d="M0 0 L-42 430 L42 430Z" fill="${cols[i]}" opacity=".17" transform="rotate(${a})"/>`).join('')}</g></g>
-    <path d="M200 -900 V16" stroke="#aaa" stroke-width="2"/><circle cx="200" cy="40" r="24" fill="#cfd3ff"/><path d="M178 32 H222 M176 44 H224 M186 20 Q182 40 186 60 M200 16 V64 M214 20 Q218 40 214 60" stroke="#8a8fd0" stroke-width="2" fill="none"/><circle cx="192" cy="30" r="4" fill="#fff"/>
+    ${night?'':`<g transform="translate(200 40)"><g class="spin">${[0,60,120,180,240,300].map((a,i)=>`<path d="M0 0 L-42 430 L42 430Z" fill="${cols[i]}" opacity=".17" transform="rotate(${a})"/>`).join('')}</g></g>
+    <path d="M200 -900 V16" stroke="#aaa" stroke-width="2"/><circle cx="200" cy="40" r="24" fill="#cfd3ff"/><path d="M178 32 H222 M176 44 H224 M186 20 Q182 40 186 60 M200 16 V64 M214 20 Q218 40 214 60" stroke="#8a8fd0" stroke-width="2" fill="none"/><circle cx="192" cy="30" r="4" fill="#fff"/>`}
     ${conf}
-    <g transform="translate(200 214) scale(.85)"><g class="partydance"><g class="dancer" data-act="dance" data-k="goon" role="button" tabindex="0" aria-label="the Goon"><ellipse cy="-10" rx="80" ry="110" fill="transparent"/>${goon()}</g></g></g>
+    <g transform="translate(200 214) scale(.85)"><g class="${night?'':'partydance'}"><g class="dancer" data-act="dance" data-k="goon" role="button" tabindex="0" aria-label="the Goon"><ellipse cy="-10" rx="80" ry="110" fill="transparent"/>${goon()}</g></g></g>
     ${mons}
-    <g transform="translate(128 430) scale(1.08)"><g class="hop"><g class="dancer" data-act="dance" data-k="uni" role="button" tabindex="0" aria-label="the little unicorn"><ellipse cy="-58" rx="44" ry="62" fill="transparent"/>${C.uni()}</g></g></g>
-    ${heart(170,300,0)}${heart(90,318,.8)}`;
+    <g transform="translate(270 322) scale(.82)"><g class="${night?'':'hop'}"><g class="dancer" data-act="dance" data-k="uni" role="button" tabindex="0" aria-label="the little unicorn"><ellipse cy="-58" rx="44" ry="62" fill="transparent"/>${C.uni()}</g></g></g>
+    ${night?'':heart(170,300,0)+heart(90,318,.8)}
+    ${night?`<rect x="-700" y="-900" width="1800" height="1900" fill="#05020c" class="lightsout"/>${zz}`:''}`;
 }
 };
+
 function monsterG(o){
   const f=S.found.has(o.id), [x,y]=o.mpos;
   return `<g transform="translate(${x} ${y})"><g class="mon ${f?'found':'peek'}" data-act="monster" data-id="${o.id}" role="button" tabindex="0" aria-label="something hiding"><circle r="44" fill="transparent"/>${f?MON[o.id].found(true):MON[o.id].peek()}</g></g>`;
@@ -1132,9 +1297,9 @@ function monsterG(o){
    ===================================================================== */
 const $=s=>document.querySelector(s);
 const stage=$('#stage'), sceneEl=$('#scene'), svg=$('#svg'), textEl=$('#text'), actEl=$('#actions');
-const S={scene:'title',ob:0,phase:'',prog:0,found:new Set(),gstep:0,run:0,hstep:0,busy:false,say:'',replay:null};
+const S={scene:'title',ob:0,phase:'',prog:0,found:new Set(),gstep:0,run:0,bstep:0,busy:false,say:'',replay:null,pr:null,idleT:0,confirm:false};
 const timers=[]; const later=(fn,ms)=>{ timers.push(setTimeout(fn,ms)); };
-const clearTimers=()=>{ timers.forEach(clearTimeout); timers.length=0; };
+const clearTimers=()=>{ timers.forEach(clearTimeout); timers.length=0; clearTimeout(S.idleT); S.pr=null; };
 function setText(html,say){ textEl.innerHTML=html+'<span class="spk" aria-hidden="true">🔊</span>'; S.say=say||textEl.textContent; }
 function setActions(html){ actEl.innerHTML=html; }
 function restartAnim(el,cls){ if(!el) return; el.classList.remove(cls); void el.getBoundingClientRect(); el.classList.add(cls); }
@@ -1146,32 +1311,84 @@ function pop(text,e){
   d.style.left=x+'px'; d.style.top=y+'px'; sceneEl.appendChild(d); setTimeout(()=>d.remove(),1200);
 }
 function updateTally(bump){ $('#tally b').textContent=S.found.size; if(bump) restartAnim($('#tally'),'bump'); }
-function go(scene,opts={}){
-  if(S.busy) return; S.busy=true; clearTimers(); Snd.stopParty(); VO.stop();
+
+/* ---------- Navigation: history of story steps, Go Back, Start Over ---------- */
+const HIST=[];
+const snap=()=>({scene:S.scene,ob:S.ob,gstep:S.gstep,run:S.run,bstep:S.bstep});
+function pushHist(){ const s=snap(), top=HIST[HIST.length-1]; if(!top||JSON.stringify(top)!==JSON.stringify(s)) HIST.push(s); }
+function updateNav(){
+  const t=S.scene==='title';
+  $('#homeBtn').classList.toggle('hide',t);
+  $('#backBtn').classList.toggle('hide',t||(!HIST.length&&!(S.scene==='obstacle'&&S.phase)));
+}
+function go(scene,opts={},{push=true}={}){
+  if(S.busy) return; S.busy=true; clearTimers(); Snd.stopParty(); VO.stop(); closeConfirm();
+  if(push) pushHist();
   stage.classList.add('fading');
   setTimeout(()=>{
-    Object.assign(S,{scene,phase:''},opts);
+    Object.assign(S,{scene,phase:'',prog:0},opts);
     sceneEl.querySelectorAll('.pop,.echo-pop').forEach(p=>p.remove()); sceneEl.classList.remove('quake');
+    stage.classList.toggle('at-title',scene==='title');
     try{ render(); }catch(err){ console.error(err); }
-    stage.classList.remove('fading'); S.busy=false;
+    stage.classList.remove('fading'); S.busy=false; updateNav();
   },230);
 }
-function render(){ ({title:rTitle,chant:rChant,obstacle:rObstacle,goon:rGoon,run:rRun,home:rHome,party:rParty})[S.scene](); }
+function goBack(){
+  if(S.busy) return; P('whoosh');
+  if(S.scene==='obstacle'&&S.phase&&S.phase!=='shouted'){ VO.pre='nav_back'; go('obstacle',{ob:S.ob},{push:false}); return; } // mid-obstacle: restart this obstacle
+  const s=HIST.pop(); if(!s) return;
+  VO.pre='nav_back'; go(s.scene,s,{push:false});
+}
+function openConfirm(){
+  if(S.confirm||S.busy) return; S.confirm=true; S.prSave=S.pr; clearTimers(); VO.stop(); Snd.stopParty();
+  const c=$('#confirm'); c.hidden=false; restartAnim(c.querySelector('.cbox'),'cin');
+  VO.seq([{id:'nav_restart_q',delay:.1}]);
+}
+function closeConfirm(){ S.confirm=false; const c=$('#confirm'); if(c) c.hidden=true; }
+function restartGame(){ HIST.length=0; S.found.clear(); updateTally(); go('title',{},{push:false}); }
+function render(){ ({title:rTitle,chant:rChant,obstacle:rObstacle,goon:rGoon,run:rRun,stairs:rStairs,bedroom:rBedroom,friends:rFriends,party:rParty,night:rNight})[S.scene](); }
 
 const lineTxt=id=>(VO_LINES[id]||[''])[0];
-function echoPop(id){ // the echo kid's reply appears as a pink speech bubble
-  const d=document.createElement('div'); d.className='echo-pop'; d.textContent=lineTxt(id);
+function echoPop(id,cls=''){ // the echo kid's reply appears as a pink speech bubble
+  const d=document.createElement('div'); d.className='echo-pop '+cls; d.textContent=lineTxt(id);
   sceneEl.appendChild(d); setTimeout(()=>d.remove(),1900);
 }
 function play(items){ S.replay=items; VO.seq(items); }
+
+/* ---------- Spoken button prompts ----------
+   Every step ends with the leader telling her what to press (the button
+   bounces while its prompt is spoken). If nothing is tapped for 7 s the main
+   prompt repeats once. Tapping the words box replays the prompt. */
+function flashBtn(a){
+  if(!a) return; const b=actEl.querySelector(`[data-act="${a}"]`)||svg.querySelector(`[data-act="${a}"]`);
+  if(!b) return; restartAnim(b,'saying'); setTimeout(()=>b.classList.remove('saying'),750);
+}
+const pItem=(id,a,q='beat',x={})=>Object.assign({id,q,on:()=>flashBtn(a)},x);
+function scene(lines,prompts,{gap=0}={}){
+  const pr={items:prompts.map(([id,a,x])=>pItem(id,a,'beat',x)),main:prompts[prompts.length-1],rep:false,armed:false};
+  if(gap&&pr.items[0]) pr.items[0].delay=gap;
+  S.pr=pr; S.replay=lines;
+  VO.seq([...lines,...pr.items],{end:()=>{ if(S.pr===pr) armIdle(); }});
+}
+function armIdle(ms=7000){ const p=S.pr; if(!p||p.rep) return; p.armed=true; clearTimeout(S.idleT); S.idleT=setTimeout(idleFire,ms); }
+function idleFire(){
+  const p=S.pr; if(!p||p.rep||!p.armed||S.confirm) return;
+  if(VO.busy()){ S.idleT=setTimeout(idleFire,1500); return; }
+  p.rep=true; const [id,a]=p.main; VO.seq([pItem(id,a,null)]);
+}
+function sayPrompt(){
+  const p=S.pr; if(!p){ if(S.replay) VO.seq(S.replay); return; }
+  VO.seq(p.items.map((it,i)=>Object.assign({},it,{q:i?'beat':null,delay:0})),{end:()=>{ if(S.pr===p&&!p.rep) armIdle(); }});
+}
 
 function rTitle(){
   VO.bedTo(null);
   svg.innerHTML=ART.title();
   setText('<p class="big">A spooky tap-along story!</p><p class="small">Listen, tap, and find the hiding monsters.</p>',"We're going on a goon hunt! A spooky tap-along story. Listen, tap, and find the hiding monsters!");
   setActions('<button class="btn pulse" data-act="start">Start the Hunt! 🎃</button>');
-  const items=[{id:'title_01'}]; S.replay=items;
-  if(VO.ctx&&VO.ctx.state==='running') VO.seq(items); // after "Hunt Again"; first visit waits for a tap
+  const lines=[{id:'title_01'}], prompts=[['p_goon','tgoon'],['p_start','start']];
+  if(VO.ctx&&VO.ctx.state==='running') scene(lines,prompts); // after "Hunt Again"; first visit waits for a tap
+  else { S.replay=lines; S.pr={items:prompts.map(([id,a])=>pItem(id,a)),main:prompts[1],rep:false,armed:false}; S.firstTitle=true; }
 }
 function rChant(){
   const o=OBST[S.ob];
@@ -1195,7 +1412,7 @@ function rChant(){
   });
   const last=items[items.length-1];
   last.on=(t,d)=>{ light(3,d); later(()=>{ const b=actEl.querySelector('.btn'); b&&b.classList.add('pulse'); },d*1000); };
-  play(items); // the kid's tap on the button is the echo for the last line
+  scene(items,[['p_scared_'+o.id,'notscared']]); // the kid's tap on the button is the echo for the last line
 }
 function rObstacle(){
   const o=OBST[S.ob], A=ART[o.id]();
@@ -1204,15 +1421,17 @@ function rObstacle(){
   setText(`<p class="big">${o.intro}</p><p class="small">We can't go over it. We can't go under it.</p>`, `${o.intro} We can't go over it. We can't go under it.`);
   setActions(`<button class="btn sm" data-act="over"><span class="e">⬆️</span>Over?</button><button class="btn sm" data-act="under"><span class="e">⬇️</span>Under?</button><button class="btn sm green pulse" data-act="through"><span class="e">➡️</span>Through!</button>`);
   P('sting');
-  play([{id:'intro_'+o.id,delay:.35},{id:'over_L',q:'bar'},{id:'over_E',q:'bar',on:()=>echoPop('over_E')},{id:'under_L',q:'bar'},{id:'under_E',q:'bar',on:()=>echoPop('under_E')}]);
+  scene([{id:'intro_'+o.id,delay:.35},{id:'over_L',q:'bar'},{id:'over_E',q:'bar',on:()=>echoPop('over_E')},{id:'under_L',q:'bar'},{id:'under_E',q:'bar',on:()=>echoPop('under_E')}],
+        [['p_over','over'],['p_under','under'],['p_through','through']]);
   later(()=>{ const m=svg.querySelector('.mon.peek'); m&&m.classList.add('hint'); },12000);
 }
 function startThrough(){
-  if(S.phase==='go'||S.phase==='done') return; const o=OBST[S.ob]; S.phase='go'; S.prog=0;
+  if(S.phase==='go'||S.phase==='done') return; const o=OBST[S.ob]; clearTimers(); S.phase='go'; S.prog=0;
   const t=$('#tgts'); t&&t.classList.remove('locked');
   setText(`<p class="big">Oh no! We've got to go THROUGH it!</p>`,"Oh no! We've got to go through it! "+o.hint);
   setActions(`<div class="prog"><div class="hint">👆 ${o.hint}</div><div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="${o.n}" aria-valuenow="0"><div class="fill" id="fill"></div></div></div>`);
-  P('drumHi'); play([{id:'through_01'},{id:'hint_'+o.id,q:'beat'}]);
+  P('drumHi'); scene([{id:'through_01'}],[['hint_'+o.id,null]]);
+  updateNav();
 }
 function moveFam(dx){ const m=svg.querySelector('.fam-move'); if(m) m.style.transform=`translateX(${dx}px)`; }
 function famAct(cls){ restartAnim(svg.querySelector('.fam-act'),cls); }
@@ -1224,7 +1443,7 @@ function hitTarget(el,e){
   P(o.snd); pop(o.word,e); VO.shout('word_'+o.id);
   moveFam(-70+140*S.prog/o.n);
   const f=$('#fill'); if(f){ f.style.width=(100*S.prog/o.n)+'%'; f.parentNode.setAttribute('aria-valuenow',S.prog); }
-  if(S.prog>=o.n){ S.phase='done'; later(o.id==='house'?doorDone:throughDone,700); }
+  if(S.prog>=o.n){ S.phase='done'; clearTimeout(S.idleT); S.pr=null; later(o.id==='house'?doorDone:throughDone,700); }
 }
 function throughDone(){
   const o=OBST[S.ob]; P('chime'); famAct('jump');
@@ -1233,7 +1452,7 @@ function throughDone(){
   setActions(`<button class="btn green pulse" data-act="next">Keep hunting! ➜</button>`);
   const items=[{id:'done_01'},{id:'done_E',q:'beat',on:()=>echoPop('done_E')}];
   if(missed) items.push({id:'psst_hiding',q:'bar'});
-  play(items);
+  scene(items,missed?[['p_find','monster'],['p_next','next']]:[['p_next','next']]);
   if(missed){ const m=svg.querySelector('.mon.peek'); m&&m.classList.add('hint'); }
 }
 function doorDone(){
@@ -1242,7 +1461,7 @@ function doorDone(){
   setActions(`<button class="btn pink pulse" data-act="enter">Who’s in there? 👀</button>`);
   P('heartbeat'); later(()=>P('heartbeat'),700);
   const items=[{id:'door_01'}]; if(missed) items.push({id:'psst_window',q:'bar'});
-  play(items);
+  scene(items,missed?[['p_find','monster'],['p_enter','enter']]:[['p_enter','enter']]);
   if(missed){ const m=svg.querySelector('.mon.peek'); m&&m.classList.add('hint'); }
 }
 function findMonster(el,e){
@@ -1252,7 +1471,7 @@ function findMonster(el,e){
     el.setAttribute('aria-label',MON[id].name);
     el.innerHTML=`<circle r="44" fill="transparent"/>${MON[id].found(true)}`;
     P('pop'); later(()=>P('giggle'),120); pop(MON[id].say,e); updateTally(true);
-    VO.seq([{id:'found_'+id}]);
+    VO.seq([{id:'found_'+id}],{end:()=>{ if(S.pr&&!S.pr.rep) armIdle(5000); }});
   } else { P('giggle'); pop(MON[id].say,e); restartAnim(el,'again'); }
 }
 const GOON_TXT=["What's that? Something is in the dark…","A bumpy, bald head!","Big, green ears!","Little, beady eyes!","IT'S A GOON! BOO!"];
@@ -1265,53 +1484,94 @@ function rGoon(){
     setActions('<button class="btn pulse" data-act="peek">Peek! 👀</button>');
     P(st===0?'heartbeat':'sting');
     const n=st+1;
-    play(st===0?[{id:'goon_01',q:'bar'}]:[{id:`goon_0${n}`,q:'bar'},{id:`goon_0${n}E`,q:'bar',on:()=>echoPop(`goon_0${n}E`)}]);
+    scene(st===0?[{id:'goon_01',q:'bar'}]:[{id:`goon_0${n}`,q:'bar'},{id:`goon_0${n}E`,q:'bar',on:()=>echoPop(`goon_0${n}E`)}],[['p_peek','peek']]);
   } else {
     VO.bedTo(null,.05); // the music cuts out at the reveal
-    setText(`<p class="big">${GOON_TXT[4]}</p><p class="small">Everybody run! …but the littlest unicorn cheers, “Hooray, a monster!”</p>`,"It's a GOON! Boo! Everybody run! But the littlest unicorn cheers: Hooray, a monster!");
+    setText(`<p class="big">${GOON_TXT[4]}</p><p class="small">Everybody run!</p>`,"It's a GOON! Boo! Everybody run!");
     setActions('<button class="btn pink pulse" data-act="run">RUN!!! 💨</button>');
     P('boo'); later(()=>P('scream'),500); restartAnim(sceneEl,'quake');
-    play([{id:'goon_05',delay:.15},{id:'goon_05E',on:()=>echoPop('goon_05E')},{id:'goon_06',delay:.2}]);
+    scene([{id:'goon_05',delay:.15},{id:'goon_05E',on:()=>echoPop('goon_05E')}],[['p_run','run']]);
   }
 }
+const RUN_TXT={house:"Quick! Back through the haunted house!",graveyard:"Back through the graveyard!",forest:"Back through the forest!",tunnel:"Back through the tunnel!",swamp:"Back through the swamp!",pumpkin:"Back through the pumpkin patch!"};
 function rRun(){
-  const id=RUNS[S.run], o=OBST.find(x=>x.id===id), s=.72;
+  const id=RUNS[S.run], o=OBST.find(x=>x.id===id), s=.66;
   VO.bedTo('escape');
-  const runners=`<g transform="translate(${(200+124*s).toFixed(1)} 428) scale(${-s} ${s})"><g class="runbob">${family({lvl:2,noUni:true})}</g></g>`;
+  const runners=`<g transform="translate(${(200+124*s).toFixed(1)} 428) scale(${-s} ${s})"><g class="runbob">${family({lvl:2})}</g></g>`;
   const lines=[300,340,380].map((y,i)=>`<g class="zoom" style="animation-delay:${i*-.13}s"><path d="M${300+i*10} ${y} h40" stroke="#fff" stroke-width="4" stroke-linecap="round" opacity=".7"/></g>`).join('');
-  const chaser=`<g transform="translate(350 236) scale(.3)">${goon()}</g><g transform="translate(300 160)"><rect x="-62" y="-22" width="124" height="34" rx="14" fill="#fff"/><path d="M30 12 l14 14 l-2 -14Z" fill="#fff"/><text y="1" text-anchor="middle" font-size="15" font-weight="bold" fill="#2a1046">Wait! Let's play!</text></g>`;
+  const chaser=`<g transform="translate(352 236) scale(.3)">${goon()}</g><g transform="translate(300 160)"><rect x="-62" y="-22" width="124" height="34" rx="14" fill="#fff"/><path d="M30 12 l14 14 l-2 -14Z" fill="#fff"/><text y="1" text-anchor="middle" font-size="15" font-weight="bold" fill="#2a1046">Wait! Let's play!</text></g>`;
   svg.innerHTML=`<g>${ART[id]().bg}</g>${chaser}${runners}${lines}`;
-  setText(`<p class="big">Back through the ${o.short}!</p><p class="sw">${o.word} ${o.word} ${o.word}</p>`,`Back through the ${o.short}! ${o.word} ${o.word} ${o.word}`);
+  const w=o.word.replace('!',''), sw=`${w}, ${w.toLowerCase()}!`;
+  setText(`<p class="big">${RUN_TXT[id]}</p><p class="sw">${sw}</p>`,`${RUN_TXT[id]} ${sw}`);
   setActions(`<button class="btn pink pulse" data-act="run">RUN! 💨</button>`);
   P('whoosh');
   const items=[{id:'run_'+id,q:'beat'}];
-  for(let i=0;i<3;i++) items.push({id:'word_'+id,q:'beat',rate:1.12,on:()=>P(o.snd)}); // rushed, double-time
-  if(S.run%2===0) items.push({id:'goon_wait',q:'beat'});
-  play(items);
+  for(let i=0;i<2;i++) items.push({id:'word_'+id,q:'beat',rate:1.08,on:()=>P(o.snd)}); // rushed, double-time
+  if(S.run===0||S.run===3) items.push({id:'goon_wait',q:'beat'});
+  scene(items,[['p_run','run']]);
 }
-function rHome(){
-  svg.innerHTML=ART.home(S.hstep);
-  if(S.hstep===0){
-    VO.bedTo(null,.4);
-    setText('<p class="big">Home! Up the stairs! Under the covers!</p><p class="small">Phew… safe and snug.</p>','Home! Up the stairs! Under the covers! Phew... safe and snug.');
-    setActions('<button class="btn green pulse" data-act="home2">Phew! 😅</button>');
-    P('slam'); later(()=>P('steps'),350);
-    play([{id:'home_01',delay:.5,on:(t,d)=>later(()=>P('wahwah'),d*1000+150)}]);
-  } else {
-    setText('<p class="big">Wait… someone is missing!</p><p class="small">Count the eyes. Who is it? 🤔</p>','Wait... someone is missing! Count the eyes. Who is it?');
-    setActions('<button class="btn pink pulse" data-act="party">Where’s the unicorn? 🦄</button>');
-    P('sting'); play([{id:'home_02'}]);
-  }
+function rStairs(){
+  VO.bedTo('escape');
+  svg.innerHTML=ART.stairs(false);
+  setText('<p class="big">Get to the front door!</p><p class="small">Open the door. Up the stairs.</p>','Get to the front door! Open the door. Up the stairs.');
+  setActions('<button class="btn pink pulse" data-act="keeprun">Keep running! 💨</button>');
+  P('slam'); later(()=>P('steps'),300);
+  scene([{id:'stairs_01',delay:.2},
+         {id:'stairs_02',q:'beat',on:()=>{ svg.innerHTML=ART.stairs(true); P('creak');
+            setText('<p class="big">Oh no! We forgot to shut the door!</p><p class="small">Nooo! Don’t go back in there!</p>','Oh no! We forgot to shut the door! Nooo! Don\'t go back in there!'); }},
+         {id:'stairs_E',q:'beat',on:()=>echoPop('stairs_E')}],
+        [['p_keeprun','keeprun']]);
+}
+function rBedroom(){
+  VO.bedTo('suspense');
+  svg.innerHTML=ART.bedroom('hide');
+  setText('<p class="big">Keep running!</p><p class="small">Into the bedroom. Into bed. Under the covers.</p>','Keep running! Into the bedroom. Into bed. Under the covers.');
+  setActions('<button class="btn pulse" data-act="peek2">Peek! 🔦</button>');
+  P('steps');
+  scene([{id:'cover_01',delay:.2},
+         {id:'cover_02',q:'bar',on:()=>setText('<p class="big">We’re not going on a goon hunt again!</p>',"We're not going on a goon hunt again!")},
+         {id:'cover_E',q:'beat',on:()=>echoPop('cover_E')},
+         {id:'cover_03',q:'bar',delay:.3,on:()=>{ svg.innerHTML=ART.bedroom('light'); P('click');
+            setText('<p class="big">Wait… who’s holding the flashlight? 🔦</p>',"Wait... who's holding the flashlight?"); }}],
+        [['p_peek','peek2']]);
+}
+function rFriends(){
+  VO.bedTo(null,.3);
+  svg.innerHTML=ART.bedroom('friends');
+  P('boing'); later(()=>P('giggle'),250);
+  const say=(who,id)=>setText(`<p class="who">${who}</p><p class="big">${lineTxt(id)}</p>`,lineTxt(id));
+  say('The Goon:','goonbed_01');
+  setActions('<button class="btn green pulse" data-act="party">Dance party! 🎉</button>');
+  scene([{id:'goonbed_01',delay:.3,on:()=>say('The Goon:','goonbed_01')},
+         {id:'uni_friend',delay:.25,on:()=>{ say('The littlest unicorn:','uni_friend'); restartAnim(svg.querySelector('.uniHi'),'hop1'); }},
+         {id:'goonbed_02',delay:.15,on:()=>{ say('The Goon:','goonbed_02'); svg.querySelectorAll('.hearts').forEach(h=>h.classList.add('show')); P('chime'); }},
+         {id:'pop_hee',delay:.1,on:()=>{ P('giggle'); later(()=>P('laugh'),200); setText('<p class="big">Everybody giggles! 😄</p>','Everybody giggles!'); svg.querySelector('.bedfam')&&svg.querySelector('.bedfam').classList.add('giggle'); }}],
+        [['p_party','party']]);
 }
 function rParty(){
   VO.bedTo(null);
   svg.innerHTML=ART.party(S.found);
   const cid='count_'+S.found.size;
-  const show=id=>setText(`<p class="big">MONSTER PARTY! 🎉</p><p class="small">${lineTxt(id)}</p>`,lineTxt('party_01')+' '+lineTxt(cid));
-  show('party_01');
-  setActions('<button class="btn green pulse" data-act="restart">Hunt Again! 🔁</button>');
+  const show=id=>setText(`<p class="big">MONSTER DANCE PARTY! 🎉</p><p class="small">${lineTxt(id)}</p>`,lineTxt('party_02')+' '+lineTxt(cid));
+  show('party_02');
+  setActions('<button class="btn pulse" data-act="night">Goodnight! 🌙</button>');
   P('cheer'); later(()=>Snd.startParty(),600);
-  play([{id:'party_01',delay:.3,on:()=>show('party_01')},{id:cid,delay:.15,on:()=>show(cid)}]);
+  scene([{id:'party_02',delay:.3,on:()=>show('party_02')},{id:cid,delay:.15,on:()=>show(cid)}],
+        [['p_goon','dance'],['p_night','night',{delay:3}]]);
+}
+function rNight(){
+  VO.bedTo(null);
+  svg.innerHTML=ART.party(S.found,true);
+  setText('<p class="big">Goodnight, Goon. Goodnight, monsters. 🌙</p>','Goodnight, Goon. Goodnight, monsters.');
+  setActions('');
+  P('chime');
+  scene([{id:'night_01',delay:.8},{id:'night_E',delay:.3,on:()=>echoPop('night_E','soft')}],
+        [['p_again','restart',{delay:.6}]]);
+  later(()=>{ // end card
+    if(S.scene!=='night') return;
+    setText('<p class="big">The End 💤</p><p class="small">Thanks for hunting!</p>','The End. Thanks for hunting!');
+    setActions('<button class="btn green pulse big2" data-act="restart">Hunt Again! 🔁</button>');
+  },2600);
 }
 function dance(el,e){
   restartAnim(el,'dance'); const k=el.dataset.k;
@@ -1325,10 +1585,18 @@ function act(a,el,e){
   switch(a){
     case 'snd': Snd.setOn(!Snd.on); el.classList.toggle('off',!Snd.on); el.setAttribute('aria-pressed',Snd.on); if(Snd.on){ P('pop'); if(S.scene==='party') Snd.startParty(); } else Snd.stopParty(); return;
     case 'voice': VO.setVoice(!VO.on); el.classList.toggle('off',!VO.on); el.setAttribute('aria-pressed',VO.on); if(VO.on) VO.seq([{id:'voice_on'}]); return;
-    case 'read': if(S.replay) VO.seq(S.replay); return;
+    case 'yes': if(S.confirm){ P('pop'); closeConfirm(); restartGame(); } return;
+    case 'no': if(S.confirm){ P('pop'); closeConfirm(); VO.pre='nav_keep';
+      // keep her place: mid-obstacle or on the "made it through" screen, nothing is redrawn or lost
+      if(S.scene==='obstacle'&&S.phase==='go'){ S.pr=S.prSave; sayPrompt(); }
+      else if(S.scene==='obstacle'&&S.phase==='done') (OBST[S.ob].id==='house'?doorDone:throughDone)();
+      else go(S.scene,snap(),{push:false}); } return;
+    case 'home': if(!S.confirm&&S.scene!=='title') openConfirm(); return;
   }
-  if(S.busy) return;
+  if(S.confirm||S.busy) return;
   switch(a){
+    case 'read': sayPrompt(); return;
+    case 'back': goBack(); return;
     case 'start': P('steps'); go('chant',{ob:0}); break;
     case 'tgoon': P('giggle'); pop('Hee hee!',e); VO.shout('pop_hee','now'); break;
     case 'notscared': {
@@ -1344,14 +1612,16 @@ function act(a,el,e){
     case 'monster': findMonster(el,e); break;
     case 'next': go('chant',{ob:S.ob+1}); break;
     case 'enter': go('goon',{gstep:0}); break;
-    case 'peek': if(S.scene==='goon'&&S.gstep<4){ S.gstep++; rGoon(); } break;
+    case 'peek': if(S.scene==='goon'&&S.gstep<4){ pushHist(); clearTimers(); VO.stop(); S.gstep++; rGoon(); updateNav(); } break;
     case 'run': {
       if(S.scene==='goon'){ go('run',{run:0}); break; }
-      const n=S.run+1; P('whoosh'); if(n>=RUNS.length) go('home',{hstep:0}); else go('run',{run:n}); break; }
-    case 'home2': S.hstep=1; rHome(); break;
+      const n=S.run+1; P('whoosh'); if(n>=RUNS.length) go('stairs',{bstep:0}); else go('run',{run:n}); break; }
+    case 'keeprun': P('whoosh'); go('bedroom',{bstep:0}); break;
+    case 'peek2': go('friends'); break;
     case 'party': P('whoosh'); go('party'); break;
+    case 'night': go('night'); break;
     case 'dance': dance(el,e); break;
-    case 'restart': S.found.clear(); updateTally(); go('title'); break;
+    case 'restart': restartGame(); break;
   }
 }
 
@@ -1359,7 +1629,10 @@ function act(a,el,e){
 let pointerDown=false;
 stage.addEventListener('pointerdown',e=>{
   pointerDown=true; Snd.init();
-  const el=e.target.closest('[data-act]'); if(!el) return;
+  if(S.pr&&S.pr.armed&&!S.pr.rep) armIdle(); // any tap restarts the "no tap" timer
+  const el=e.target.closest('[data-act]');
+  if(S.firstTitle&&S.scene==='title'&&(!el||el.dataset.act!=='start')){ S.firstTitle=false; if(!el||el.dataset.act==='read'){ scene(S.replay,[['p_goon','tgoon'],['p_start','start']]); if(el) return; } }
+  if(!el) return;
   e.preventDefault(); act(el.dataset.act,el,e);
 });
 // Keyboard (Enter/Space) support: HTML buttons fire click with detail 0
